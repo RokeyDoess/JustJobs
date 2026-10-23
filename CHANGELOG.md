@@ -1,7 +1,8 @@
 # Changelog
 
-## 1.0.0 (unreleased)
+## 1.0.0 (2026-10-22)
 
+- First stable release, with 13 automatic jobs, Vault rewards, progress menus, and leaderboards.
 - Digging now pays 0.0085 per block. Mining's stone rate stays at 0.0075, with higher rates for ores.
 - Dueling now pays 10 per player kill.
 - Exploring and Sailing both update every 200 blocks. Per-block XP and money rates are unchanged.
