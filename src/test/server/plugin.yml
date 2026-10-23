@@ -1,0 +1,5 @@
+name: JustJobsChecks
+version: '1'
+main: checks.ReleaseChecks
+api-version: '26.3'
+depend: [JustJobs, Vault]

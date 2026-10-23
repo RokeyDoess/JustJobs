@@ -1,0 +1,35 @@
+# Jobs themselves live in jobs.yml. /jobs reload applies every setting.
+config-version: 1
+economy:
+  # Shown before money amounts in menus and messages. Use '' for no symbol.
+  currency-symbol: '$'
+  whole-number-payouts: true
+  # Per player, per job, in a rolling hour. 0 disables the cap. XP is never capped.
+  hourly-income-limit-per-job: '100'
+  # Failed/unavailable payments retry on this interval. New earnings pay as soon as possible.
+  payout-interval-seconds: 10
+  payout-chat: false
+feedback:
+  level-up-chat: true
+  level-up-chat-default: true
+  leaderboard-preview-size: 5
+  boss-bar: true
+  boss-bar-seconds: 6
+storage:
+  autosave-seconds: 30
+progression:
+  first-level-xp: 25
+  early-level-xp: 150
+  early-level: 10
+  plateau-xp: 2500
+  plateau-level: 50
+rules:
+  excluded-worlds: []
+  # Survival and adventure players earn rewards; creative and spectators never do.
+  pvp-pair-cooldown-seconds: 60
+  reward-spawner-mobs: true
+  travel-sample-ticks: 20
+  travel-minimum-displacement: 0.5
+  # Walking counts actual horizontal movement, including jumps. This is the per-second safety limit.
+  maximum-walk-blocks-per-sample: 12
+  maximum-sail-blocks-per-sample: 35

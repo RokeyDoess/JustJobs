@@ -1,0 +1,233 @@
+# Add another entry under jobs to create a job; no code changes are needed.
+# Keep its ID stable: player progress is stored against that ID.
+# Activities: block-break, block-place, crop-harvest, breed, fish, mob-kill,
+# player-kill, trade, travel, sail, enchant.
+# A rule matches materials or entities, depending on its activity. '*' matches any.
+# Each rule's description names its reward unit in the menu; edit it to suit your selectors.
+# Material tags such as '#minecraft:logs' are supported for block-break rules.
+# The entity selector '#hostile' matches mobs classified by Paper as enemies.
+# Trade units are emeralds paid to villagers; travel/sail units are blocks traveled.
+# Enchant units are XP levels spent (1, 2, or 3), not the displayed level requirement.
+# Other activities award once per block, kill, harvest, animal bred, or catch.
+# Crop harvests count mature broken crops or a successful berry harvest, not planting.
+# Placement jobs share one reward per world location, even across players and block types.
+# Fish rules select caught item materials; breed rules select the offspring's entity type.
+# Matching rules add together, including rules in different jobs. Avoid unintended overlap.
+# Optional progression overrides: first-level-xp, early-level-xp, early-level,
+# plateau-xp, plateau-level, xp-multiplier (1 = normal, 2 = twice the XP required).
+# distance-per-reward batches travel XP and money; rule rates are still per block.
+# Optional hourly-income-limit overrides the shared money cap; 0 means unlimited.
+# natural-only defaults to true for block jobs. False allows grown/generated blocks;
+# hand-placed blocks are still excluded.
+# Travel pays a smaller bonus. Each job is capped at 100 per hour by default.
+config-version: 4
+jobs:
+  digging:
+    name: Digging
+    icon: IRON_SHOVEL
+    color: YELLOW
+    description: Dig natural soil and sand.
+    enabled: true
+    natural-only: true
+    rules:
+      - activity: block-break
+        description: soil or sand block
+        materials: [DIRT, GRASS_BLOCK, COARSE_DIRT, ROOTED_DIRT, PODZOL, MYCELIUM, MUD, CLAY, SAND, RED_SAND, GRAVEL, SOUL_SAND, SOUL_SOIL]
+        xp: 1
+        money: '0.0075'
+  mining:
+    name: Mining
+    icon: IRON_PICKAXE
+    color: BLUE
+    description: Mine natural stone and ore.
+    enabled: true
+    natural-only: true
+    rules:
+      - activity: block-break
+        description: stone block
+        materials: [STONE, DEEPSLATE, GRANITE, DIORITE, ANDESITE, TUFF, CALCITE, NETHERRACK, BLACKSTONE, BASALT, END_STONE]
+        xp: 1
+        money: '0.0075'
+      - activity: block-break
+        description: common ore (coal, copper, Nether ores)
+        materials: [COAL_ORE, DEEPSLATE_COAL_ORE, COPPER_ORE, DEEPSLATE_COPPER_ORE, NETHER_GOLD_ORE, NETHER_QUARTZ_ORE]
+        xp: 5
+        money: '0.03'
+      - activity: block-break
+        description: iron, gold, redstone or lapis ore
+        materials: [IRON_ORE, DEEPSLATE_IRON_ORE, GOLD_ORE, DEEPSLATE_GOLD_ORE, REDSTONE_ORE, DEEPSLATE_REDSTONE_ORE, LAPIS_ORE, DEEPSLATE_LAPIS_ORE]
+        xp: 5
+        money: '0.10'
+      - activity: block-break
+        description: rare ore (diamond, emerald, ancient debris)
+        materials: [DIAMOND_ORE, DEEPSLATE_DIAMOND_ORE, EMERALD_ORE, DEEPSLATE_EMERALD_ORE, ANCIENT_DEBRIS]
+        xp: 5
+        money: '0.50'
+  treefelling:
+    name: Treefelling
+    icon: IRON_AXE
+    color: GREEN
+    description: Chop natural and player-grown trees.
+    enabled: true
+    natural-only: false
+    rules:
+      - activity: block-break
+        description: log
+        materials: ['#minecraft:logs', '#minecraft:crimson_stems', '#minecraft:warped_stems']
+        xp: 2
+        money: '0.075'
+  hunting:
+    name: Hunting
+    icon: BOW
+    color: RED
+    description: Hunt hostile mobs.
+    enabled: true
+    rules:
+      - activity: mob-kill
+        description: hostile mob killed
+        entities: ['#hostile']
+        xp: 5
+        money: '0.40'
+  dueling:
+    name: Dueling
+    icon: IRON_SWORD
+    color: RED
+    description: Defeat other players.
+    enabled: true
+    progression:
+      first-level-xp: 10
+      xp-multiplier: 1
+    rules:
+      - activity: player-kill
+        description: player kill
+        xp: 10
+        money: '12.50'
+  trading:
+    name: Trading
+    icon: EMERALD
+    color: GREEN
+    description: Spend emeralds with villagers.
+    enabled: true
+    rules:
+      - activity: trade
+        description: emerald spent
+        xp: 1
+        money: '0.10'
+  exploring:
+    name: Exploring
+    icon: COMPASS
+    color: PURPLE
+    description: Explore on foot.
+    enabled: true
+    distance-per-reward: 150
+    rules:
+      - activity: travel
+        description: blocks walked
+        xp: 0.01
+        money: '0.001'
+  sailing:
+    name: Sailing
+    icon: OAK_BOAT
+    color: BLUE
+    description: Travel by boat on water.
+    enabled: true
+    distance-per-reward: 200
+    rules:
+      - activity: sail
+        description: blocks sailed
+        xp: 0.01
+        money: '0.0005'
+  enchanting:
+    name: Enchanting
+    icon: ENCHANTING_TABLE
+    color: PINK
+    description: Enchant items at an enchanting table.
+    enabled: true
+    rules:
+      - activity: enchant
+        description: enchanting level spent
+        xp: 10
+        money: '0.50'
+  farming:
+    name: Farming
+    icon: IRON_HOE
+    color: GREEN
+    description: Harvest mature crops and breed animals.
+    enabled: true
+    rules:
+      - activity: crop-harvest
+        description: mature crop or berry harvest
+        materials: [WHEAT, CARROTS, POTATOES, BEETROOTS, NETHER_WART, COCOA, SWEET_BERRY_BUSH, CAVE_VINES, CAVE_VINES_PLANT]
+        xp: 1
+        money: '0.02'
+      - activity: breed
+        description: animal bred
+        entities: ['*']
+        xp: 5
+        money: '0.50'
+  fishing:
+    name: Fishing
+    icon: FISHING_ROD
+    color: BLUE
+    description: Catch fish and other items with a fishing rod.
+    enabled: true
+    rules:
+      - activity: fish
+        description: successful catch
+        materials: ['*']
+        xp: 5
+        money: '0.75'
+  engineering:
+    name: Engineering
+    icon: PISTON
+    color: RED
+    description: Place redstone components and railway blocks.
+    enabled: true
+    rules:
+      - activity: block-place
+        description: wiring or ordinary rail
+        materials: [REDSTONE_WIRE, REDSTONE_TORCH, REDSTONE_WALL_TORCH, REPEATER, LEVER, STONE_BUTTON, POLISHED_BLACKSTONE_BUTTON, '#minecraft:wooden_buttons', RAIL, TRIPWIRE_HOOK]
+        xp: 1
+        money: '0.02'
+      - activity: block-place
+        description: powered, detector or activator rail
+        materials: [POWERED_RAIL, DETECTOR_RAIL, ACTIVATOR_RAIL]
+        xp: 2
+        money: '0.05'
+      - activity: block-place
+        description: component (piston, hopper, observer, etc.)
+        materials: [PISTON, STICKY_PISTON, OBSERVER, COMPARATOR, DISPENSER, DROPPER, HOPPER, REDSTONE_LAMP, DAYLIGHT_DETECTOR, TARGET, CRAFTER]
+        xp: 3
+        money: '0.15'
+  building:
+    name: Building
+    icon: BRICKS
+    color: YELLOW
+    description: Build with wood, stone, glass, and decorative blocks.
+    enabled: true
+    rules:
+      - activity: block-place
+        description: building block placed
+        materials: [
+          '#minecraft:planks', '#minecraft:logs', '#minecraft:stairs', '#minecraft:slabs', '#minecraft:wooden_fences', '#minecraft:fence_gates',
+          '#minecraft:wooden_doors', '#minecraft:wooden_trapdoors', '#minecraft:wool', '#minecraft:terracotta', '#minecraft:stone_bricks', '#minecraft:walls',
+          STONE, SMOOTH_STONE, STONE_STAIRS, STONE_SLAB, SMOOTH_STONE_SLAB, COBBLESTONE,
+          COBBLESTONE_STAIRS, COBBLESTONE_SLAB, MOSSY_COBBLESTONE, MOSSY_COBBLESTONE_STAIRS, MOSSY_COBBLESTONE_SLAB, STONE_BRICK_STAIRS,
+          STONE_BRICK_SLAB, BRICKS, BRICK_STAIRS, BRICK_SLAB, GRANITE, POLISHED_GRANITE,
+          DIORITE, POLISHED_DIORITE, ANDESITE, POLISHED_ANDESITE, DEEPSLATE, COBBLED_DEEPSLATE,
+          POLISHED_DEEPSLATE, DEEPSLATE_BRICKS, DEEPSLATE_TILES, TUFF, POLISHED_TUFF, TUFF_BRICKS,
+          CALCITE, SANDSTONE, CUT_SANDSTONE, SMOOTH_SANDSTONE, RED_SANDSTONE, CUT_RED_SANDSTONE,
+          SMOOTH_RED_SANDSTONE, NETHER_BRICKS, RED_NETHER_BRICKS, BLACKSTONE, POLISHED_BLACKSTONE, POLISHED_BLACKSTONE_BRICKS,
+          END_STONE_BRICKS, QUARTZ_BLOCK, QUARTZ_BRICKS, QUARTZ_PILLAR, SMOOTH_QUARTZ, PURPUR_BLOCK,
+          PURPUR_PILLAR, GLASS, GLASS_PANE, WHITE_STAINED_GLASS, ORANGE_STAINED_GLASS, MAGENTA_STAINED_GLASS,
+          LIGHT_BLUE_STAINED_GLASS, YELLOW_STAINED_GLASS, LIME_STAINED_GLASS, PINK_STAINED_GLASS, GRAY_STAINED_GLASS, LIGHT_GRAY_STAINED_GLASS,
+          CYAN_STAINED_GLASS, PURPLE_STAINED_GLASS, BLUE_STAINED_GLASS, BROWN_STAINED_GLASS, GREEN_STAINED_GLASS, RED_STAINED_GLASS,
+          BLACK_STAINED_GLASS, WHITE_STAINED_GLASS_PANE, ORANGE_STAINED_GLASS_PANE, MAGENTA_STAINED_GLASS_PANE, LIGHT_BLUE_STAINED_GLASS_PANE, YELLOW_STAINED_GLASS_PANE,
+          LIME_STAINED_GLASS_PANE, PINK_STAINED_GLASS_PANE, GRAY_STAINED_GLASS_PANE, LIGHT_GRAY_STAINED_GLASS_PANE, CYAN_STAINED_GLASS_PANE, PURPLE_STAINED_GLASS_PANE,
+          BLUE_STAINED_GLASS_PANE, BROWN_STAINED_GLASS_PANE, GREEN_STAINED_GLASS_PANE, RED_STAINED_GLASS_PANE, BLACK_STAINED_GLASS_PANE, WHITE_CONCRETE,
+          ORANGE_CONCRETE, MAGENTA_CONCRETE, LIGHT_BLUE_CONCRETE, YELLOW_CONCRETE, LIME_CONCRETE, PINK_CONCRETE,
+          GRAY_CONCRETE, LIGHT_GRAY_CONCRETE, CYAN_CONCRETE, PURPLE_CONCRETE, BLUE_CONCRETE, BROWN_CONCRETE,
+          GREEN_CONCRETE, RED_CONCRETE, BLACK_CONCRETE
+        ]
+        xp: 1
+        money: '0.015'
