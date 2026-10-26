@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions and setup help
+    url: https://github.com/RokeyDoess/JustJobs/discussions/categories/q-a
+    about: Ask about settings, compatibility, or using JustJobs on your server.
+  - name: Commands and configuration
+    url: https://github.com/RokeyDoess/JustJobs#install
+    about: Read the setup instructions and links to the configuration docs.
+  - name: Report a security problem privately
+    url: https://github.com/RokeyDoess/JustJobs/security/advisories/new
+    about: Report duplication exploits, security issues, or exposed player data without posting them publicly.

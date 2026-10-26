@@ -1,0 +1,27 @@
+name: Feature request
+description: Suggest an improvement that fits JustJobs.
+labels: [enhancement, needs-triage]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        JustJobs aims to stay a simple jobs plugin. Check existing requests first; a reaction on an existing idea helps keep the discussion together.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What would this help with?
+      description: Describe the problem or missing behavior from a player or server owner's point of view.
+    validations:
+      required: true
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Your suggestion
+      description: Explain how you'd like it to work. An example is useful.
+    validations:
+      required: true
+  - type: textarea
+    id: considerations
+    attributes:
+      label: Anything else to consider?
+      description: Optional. Alternatives, possible reward loops, economy effects, or examples from your server.

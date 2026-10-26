@@ -1,0 +1,49 @@
+name: Bug report
+description: Something isn't working as it should.
+labels: [bug, needs-triage]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Check existing issues first. For duplication exploits, security problems, or exposed player data, use [private reporting](https://github.com/RokeyDoess/JustJobs/security/advisories/new).
+  - type: input
+    id: plugin-version
+    attributes:
+      label: JustJobs version
+      description: The version shown by /version JustJobs.
+      placeholder: 1.0.1
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Server setup
+      description: Include the full Paper version, Java version, Vault version, and economy provider. Mention other plugins that might be involved.
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: What happened?
+      description: Describe what went wrong and what you expected instead. Screenshots can help with menu or chat problems.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: How can we reproduce it?
+      description: List the steps, including the job or action involved. If it only happened once, say so.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Include the error and nearby lines, if there are any. Remove addresses, tokens, and other private details.
+      render: text
+  - type: textarea
+    id: config
+    attributes:
+      label: Relevant settings
+      description: Include changed settings or the affected job entry. Please don't upload databases, player files, or your whole server folder.
+      render: yaml

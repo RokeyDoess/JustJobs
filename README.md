@@ -27,4 +27,6 @@ Download the JAR from [Releases](https://github.com/RokeyDoess/JustJobs/releases
 
 [Commands](docs/commands.md) · [Configuration](docs/configuration.md) · [Changelog](CHANGELOG.md)
 
+Found a bug or have an idea? Use the [issue forms](https://github.com/RokeyDoess/JustJobs/issues/new/choose). For questions and setup help, head to [Discussions](https://github.com/RokeyDoess/JustJobs/discussions/categories/q-a). [Contributions](.github/CONTRIBUTING.md) are welcome. Please [report security problems privately](.github/SECURITY.md).
+
 Licensed under [GPLv3](LICENSE).
