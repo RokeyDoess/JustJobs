@@ -27,7 +27,7 @@ import java.util.Set;
 import java.util.UUID;
 
 public final class JobsMenu implements Listener {
-    private enum Action { BOSS_BAR, CHAT, HOME, ALL_RANKINGS, PREVIOUS, NEXT }
+    private enum Action { BOSS_BAR, CHAT, PAYDAY_CHAT, PAYCHECK, HOME, ALL_RANKINGS, PREVIOUS, NEXT }
     private final JustJobsPlugin plugin;
     private final Map<String, Ranking> rankings = new HashMap<>();
     private final Set<String> loading = new HashSet<>();
@@ -116,7 +116,7 @@ public final class JobsMenu implements Listener {
                     "Page " + (page + 1) + " / " + Math.max(1, (count + capacity - 1) / capacity), "Reopen to refresh; cached for up to 10 seconds."));
         } else {
             inv.setItem(MenuLayout.INFO, leaderboard ? item(Material.GOLDEN_HELMET, "Job leaderboards", "The best in each job.", "Choose a job to see the full rankings.")
-                    : item(Material.BOOK, player.getName() + "'s jobs", "Every job tracks automatically.", "Saved earnings: " + plugin.currency(profile.pending),
+                    : item(Material.BOOK, player.getName() + "'s jobs", "Every job tracks automatically.", "Unpaid earnings: " + plugin.currency(plugin.unpaidEarnings(profile)),
                     "Page " + (page + 1) + " / " + Math.max(1, (count + capacity - 1) / capacity)));
             for (int index = page * capacity; index < Math.min(jobs.size(), (page + 1) * capacity); index++) {
                 var job = jobs.get(index);
@@ -130,7 +130,9 @@ public final class JobsMenu implements Listener {
                 selected == null ? "No jobs enabled" : ranking == null ? "Loading rankings..." : "No progress recorded yet"));
         var controls = new ArrayList<Action>();
         if (page > 0) controls.add(Action.PREVIOUS);
-        controls.add(Action.BOSS_BAR); controls.add(Action.CHAT); controls.add(Action.HOME);
+        controls.add(Action.BOSS_BAR); controls.add(Action.CHAT); controls.add(Action.PAYDAY_CHAT);
+        if (!leaderboard) controls.add(Action.PAYCHECK);
+        controls.add(Action.HOME);
         if (selected != null) controls.add(Action.ALL_RANKINGS);
         if ((page + 1) * capacity < count) controls.add(Action.NEXT);
         var controlSlots = MenuLayout.controls(controls.size());
@@ -143,12 +145,24 @@ public final class JobsMenu implements Listener {
                 case NEXT -> item(Material.ARROW, "Next page");
                 case BOSS_BAR -> item(Material.LEVER, "Boss bar: " + (profile.bossBar ? "On" : "Off"), "Click to toggle your progress bar.");
                 case CHAT -> item(Material.PAPER, "Level-up chat: " + (profile.notifications ? "On" : "Off"), "Click to toggle your level-up messages.");
+                case PAYDAY_CHAT -> item(Material.GOLD_NUGGET, "Payday chat: " + (profile.paydayChat ? "On" : "Off"), "Click to toggle your payday messages.");
+                case PAYCHECK -> paycheck(profile);
                 case HOME -> item(Material.BOOK, leaderboard ? "Back to your jobs" : "Leaderboards");
                 case ALL_RANKINGS -> item(Material.COMPASS, "All leaderboards");
             });
         }
         inv.setItem(MenuLayout.CLOSE, item(Material.OAK_DOOR, "Close"));
         player.openInventory(inv);
+    }
+
+    private ItemStack paycheck(PlayerProfile profile) {
+        String when = plugin.paydayEnabled() ? java.time.format.DateTimeFormatter.ofPattern("EEE HH:mm z", java.util.Locale.ROOT)
+                .withZone(java.time.ZoneId.systemDefault()).format(java.time.Instant.ofEpochMilli(plugin.nextPayday())) : "As earnings become payable";
+        long seconds = Math.max(0, (plugin.nextPayday() - System.currentTimeMillis()) / 1000);
+        var lore = new ArrayList<>(List.of("Distribution: " + when, "Earned: " + plugin.currencyRate(plugin.unpaidEarnings(profile))));
+        if (plugin.paydayEnabled()) lore.add("Next payday in " + seconds / 60 + "m " + seconds % 60 + "s");
+        lore.add("Reopen to refresh.");
+        return item(Material.CLOCK, "Next paycheck", lore.toArray(String[]::new));
     }
 
     private ArrayList<String> preview(JobRegistry.Job job) {
@@ -229,6 +243,8 @@ public final class JobsMenu implements Listener {
             else if (page.controls.containsKey(slot)) switch (page.controls.get(slot)) {
                 case BOSS_BAR -> { plugin.toggleBossBar(player); open(player, page.leaderboard, page.page, page.job); }
                 case CHAT -> { plugin.toggleNotifications(player); open(player, page.leaderboard, page.page, page.job); }
+                case PAYDAY_CHAT -> { plugin.togglePaydayChat(player); open(player, page.leaderboard, page.page, page.job); }
+                case PAYCHECK -> open(player, page.leaderboard, page.page, page.job);
                 case HOME -> open(player, !page.leaderboard, 0, null);
                 case ALL_RANKINGS -> open(player, true, 0, null);
                 case PREVIOUS -> open(player, page.leaderboard, page.page - 1, page.job);

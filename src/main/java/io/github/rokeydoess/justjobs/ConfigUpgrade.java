@@ -6,17 +6,22 @@ import org.bukkit.configuration.file.YamlConfiguration;
 final class ConfigUpgrade {
     private ConfigUpgrade() { }
     static void settings(YamlConfiguration yaml) {
-        if (ConfigValues.integer(yaml, "config-version", 0, 0, 1) != 0) return;
-        yaml.set("progression.growth", null);
-        if (!yaml.contains("progression.first-level-xp") || yaml.get("progression.first-level-xp") instanceof Number number && number.doubleValue() == 10)
-            yaml.set("progression.first-level-xp", Math.min(25, yaml.getDouble("progression.plateau-xp", 2500)));
-        if (!yaml.contains("progression.early-level-xp"))
-            yaml.set("progression.early-level-xp", Math.max(yaml.getDouble("progression.first-level-xp", 25), Math.min(150, yaml.getDouble("progression.plateau-xp", 2500))));
-        yaml.set("config-version", 1);
+        long version = ConfigValues.integer(yaml, "config-version", 0, 0, 2);
+        if (version == 2) return;
+        if (version == 0) {
+            yaml.set("progression.growth", null);
+            if (!yaml.contains("progression.first-level-xp") || yaml.get("progression.first-level-xp") instanceof Number number && number.doubleValue() == 10)
+                yaml.set("progression.first-level-xp", Math.min(25, yaml.getDouble("progression.plateau-xp", 2500)));
+            if (!yaml.contains("progression.early-level-xp"))
+                yaml.set("progression.early-level-xp", Math.max(yaml.getDouble("progression.first-level-xp", 25), Math.min(150, yaml.getDouble("progression.plateau-xp", 2500))));
+        }
+        if (!yaml.contains("rules.reward-spawner-mobs") || Boolean.TRUE.equals(yaml.get("rules.reward-spawner-mobs")))
+            yaml.set("rules.reward-spawner-mobs", false);
+        yaml.set("config-version", 2);
     }
     static boolean jobs(YamlConfiguration yaml) {
-        long version = ConfigValues.integer(yaml, "config-version", 0, 0, 6);
-        if (version == 6) return false;
+        long version = ConfigValues.integer(yaml, "config-version", 0, 0, 8);
+        if (version == 8) return false;
         if (version < 2) upgradeOriginalJobs(yaml, version);
         var jobs = yaml.getConfigurationSection("jobs");
         if (jobs != null && !jobs.getKeys(false).isEmpty()) {
@@ -42,24 +47,30 @@ final class ConfigUpgrade {
                 job.set("rules", rules);
             }
             if (version < 5) upgradePlacementJobs(yaml, defaults);
-            retuneDefaults(yaml, defaults);
+            retuneDefaults(yaml, defaults, version);
         }
-        yaml.set("config-version", 6);
+        yaml.set("config-version", 8);
         return true;
     }
-    private static void retuneDefaults(YamlConfiguration yaml, YamlConfiguration defaults) {
-        for (String id : java.util.List.of("digging", "digger", "dueling", "gladiator")) {
+    private static void retuneDefaults(YamlConfiguration yaml, YamlConfiguration defaults, long version) {
+        for (String id : java.util.List.of("digging", "digger", "dueling", "gladiator", "fishing")) {
             String canonical = id.equals("digger") ? "digging" : id.equals("gladiator") ? "dueling" : id;
+            if (version >= 6 && canonical.equals("digging") || version >= 7 && canonical.equals("fishing")) continue;
             var job = yaml.getConfigurationSection("jobs." + id);
             if (job == null || !job.isList("rules") || job.getList("rules").size() != job.getMapList("rules").size()) continue;
             var expected = defaults.getMapList("jobs." + canonical + ".rules").getFirst();
-            var previous = new java.math.BigDecimal(canonical.equals("digging") ? "0.0075" : "12.50");
+            var previous = new java.math.BigDecimal(switch (canonical) {
+                case "digging" -> "0.0075";
+                case "dueling" -> version < 6 ? "12.50" : "10";
+                default -> "0.75";
+            });
             var rules = new java.util.ArrayList<Map<String, Object>>();
             for (var raw : job.getMapList("rules")) {
                 var rule = new java.util.LinkedHashMap<String, Object>(); raw.forEach((key, value) -> rule.put(key.toString(), value));
                 try {
                     if (java.util.Objects.equals(rule.get("activity"), expected.get("activity"))
                             && java.util.Objects.equals(selectors(rule, "materials"), selectors(expected, "materials"))
+                            && java.util.Objects.equals(selectors(rule, "entities"), selectors(expected, "entities"))
                             && new java.math.BigDecimal(String.valueOf(rule.get("money"))).compareTo(previous) == 0)
                         rule.put("money", expected.get("money"));
                 } catch (NumberFormatException ignored) { /* Normal validation reports invalid amounts. */ }
@@ -67,9 +78,12 @@ final class ConfigUpgrade {
             }
             job.set("rules", rules);
         }
-        for (String id : java.util.List.of("exploring", "explorer")) {
+        if (version < 7) for (String id : java.util.List.of("exploring", "explorer", "sailing", "sailor")) {
             String key = "jobs." + id + ".distance-per-reward";
-            if (yaml.get(key) instanceof Number n && n.doubleValue() == 150) yaml.set(key, 200);
+            String canonical = id.equals("explorer") ? "exploring" : id.equals("sailor") ? "sailing" : id;
+            if (yaml.get(key) instanceof Number n && (n.doubleValue() == 200
+                    || version < 6 && canonical.equals("exploring") && n.doubleValue() == 150))
+                yaml.set(key, defaults.get("jobs." + canonical + ".distance-per-reward"));
         }
     }
     private static void upgradePlacementJobs(YamlConfiguration yaml, YamlConfiguration defaults) {

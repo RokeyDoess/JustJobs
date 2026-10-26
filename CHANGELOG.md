@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.0.1 (2026-10-25)
+
+- Added automatic hourly paychecks, with an optional immediate-payout mode. Offline players are paid, fractions carry forward, and missed or rejected payments recover automatically.
+- Added “Next paycheck” to the jobs menu and a saved payday chat toggle, enabled by default. Hovering over “Payday!” shows the deposit's per-job breakdown.
+- Added optional verbose logging with periodic job totals, per-player earning rates, cap deductions, and payment outcomes.
+- Fishing pays 0.25 per catch, down from 0.75. XP is unchanged.
+- Exploring and Sailing update every 500 blocks. Per-block XP and money rates are unchanged.
+- Spawner mobs and other artificial spawns no longer earn Hunting XP or money by default. Set `rules.reward-spawner-mobs: true` to allow them.
+- Dueling pays 5 per player kill, down from 10. XP and the pair cooldown are unchanged.
+- Existing default settings upgrade automatically; custom rates and intervals are kept.
+- Back up job data before updating. Rolling back from the paycheck database upgrade requires a pre-update database.
+
 ## 1.0.0 (2026-10-22)
 
 - First stable release, with 13 automatic jobs, Vault rewards, progress menus, and leaderboards.

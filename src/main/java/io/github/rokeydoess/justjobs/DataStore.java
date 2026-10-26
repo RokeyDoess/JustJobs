@@ -14,7 +14,10 @@ import java.util.UUID;
 /** Accessed only on startup and by the single storage worker. */
 public final class DataStore implements AutoCloseable {
     private final Connection db;
-    public record Payment(String id, UUID player, String name, BigDecimal amount) { }
+    public record Payment(String id, UUID player, String name, BigDecimal amount, Map<String, BigDecimal> jobs) {
+        public Payment { jobs = Map.copyOf(jobs); if (Paycheck.total(jobs).compareTo(amount) != 0) throw new IllegalArgumentException("Invalid payment breakdown"); }
+        public Payment(String id, UUID player, String name, BigDecimal amount) { this(id, player, name, amount, Map.of(Paycheck.PREVIOUS, amount)); }
+    }
     public record Reservation(PlayerProfile.Snapshot player, Payment payment) { }
     public record Settlement(String id, String status, PlayerProfile.Snapshot player) { }
 
@@ -29,7 +32,7 @@ public final class DataStore implements AutoCloseable {
     }
     private void initialize() throws SQLException {
         try (var s = db.createStatement(); var rows = s.executeQuery("PRAGMA user_version")) {
-            if (rows.next() && rows.getInt(1) > 3) {
+            if (rows.next() && rows.getInt(1) > 4) {
                 throw new SQLException("This jobs.db belongs to a newer JustJobs version");
             }
         }
@@ -44,15 +47,19 @@ public final class DataStore implements AutoCloseable {
             s.execute("CREATE TABLE IF NOT EXISTS pvp_pairs (pair TEXT PRIMARY KEY, rewarded_at INTEGER NOT NULL)");
             s.execute("CREATE TABLE IF NOT EXISTS earnings (uuid TEXT NOT NULL REFERENCES players(uuid), job TEXT NOT NULL, minute INTEGER NOT NULL, amount TEXT NOT NULL, PRIMARY KEY(uuid,job,minute))");
             s.execute("CREATE TABLE IF NOT EXISTS travel (uuid TEXT NOT NULL REFERENCES players(uuid), job TEXT NOT NULL, distance REAL NOT NULL, PRIMARY KEY(uuid,job))");
+            s.execute("CREATE TABLE IF NOT EXISTS paycheck_jobs (uuid TEXT NOT NULL REFERENCES players(uuid), job TEXT NOT NULL, amount TEXT NOT NULL, due INTEGER NOT NULL, PRIMARY KEY(uuid,job,due))");
+            s.execute("CREATE TABLE IF NOT EXISTS payment_jobs (payment TEXT NOT NULL REFERENCES payments(id) ON DELETE CASCADE, job TEXT NOT NULL, amount TEXT NOT NULL, PRIMARY KEY(payment,job))");
         }
-        boolean bossBar = false;
+        var columns = new java.util.HashSet<String>();
         try (var s = db.createStatement(); var rows = s.executeQuery("PRAGMA table_info(players)")) {
-            while (rows.next()) if (rows.getString("name").equals("boss_bar")) bossBar = true;
+            while (rows.next()) columns.add(rows.getString("name"));
         }
         try (var s = db.createStatement()) {
-            if (!bossBar) s.execute("ALTER TABLE players ADD COLUMN boss_bar INTEGER NOT NULL DEFAULT 1");
+            if (!columns.contains("boss_bar")) s.execute("ALTER TABLE players ADD COLUMN boss_bar INTEGER NOT NULL DEFAULT 1");
+            if (!columns.contains("payday_chat")) s.execute("ALTER TABLE players ADD COLUMN payday_chat INTEGER NOT NULL DEFAULT 1");
+            if (!columns.contains("payday_at")) s.execute("ALTER TABLE players ADD COLUMN payday_at INTEGER NOT NULL DEFAULT 0");
             s.execute("UPDATE payments SET status='RESERVED' WHERE status='REVIEW'");
-            s.execute("PRAGMA user_version=3");
+            s.execute("PRAGMA user_version=4");
         }
     }
 
@@ -63,6 +70,8 @@ public final class DataStore implements AutoCloseable {
                 var p = new PlayerProfile(UUID.fromString(rows.getString("uuid")), rows.getString("name"));
                 p.notifications = rows.getBoolean("notifications");
                 p.bossBar = rows.getBoolean("boss_bar");
+                p.paydayChat = rows.getBoolean("payday_chat");
+                p.paycheck.restoreNext(rows.getLong("payday_at"));
                 p.pending = new BigDecimal(rows.getString("pending"));
                 if (p.pending.signum() < 0) throw new SQLException("Negative pending balance for " + p.id);
                 result.put(p.id, p);
@@ -85,6 +94,13 @@ public final class DataStore implements AutoCloseable {
         try (var s = db.createStatement(); var rows = s.executeQuery("SELECT * FROM travel")) {
             while (rows.next()) player(result, rows.getString("uuid")).travel.restore(rows.getString("job"), rows.getDouble("distance"));
         }
+        try (var s = db.createStatement(); var rows = s.executeQuery("SELECT * FROM paycheck_jobs")) {
+            while (rows.next()) {
+                var p = player(result, rows.getString("uuid"));
+                p.paycheck.restore(p.paycheck.snapshot().next(), rows.getString("job"), new BigDecimal(rows.getString("amount")), rows.getBoolean("due"));
+            }
+        }
+        for (var p : result.values()) p.paycheck.reconcile(p.pending);
         return result;
     }
     private static PlayerProfile player(Map<UUID, PlayerProfile> players, String id) throws SQLException {
@@ -96,12 +112,20 @@ public final class DataStore implements AutoCloseable {
     }
 
     private void write(PlayerProfile.Snapshot p) throws SQLException {
-        try (var s = db.prepareStatement("INSERT INTO players (uuid,name,notifications,pending,boss_bar) VALUES (?,?,?,?,?) ON CONFLICT(uuid) DO UPDATE SET name=excluded.name, notifications=excluded.notifications, pending=excluded.pending, boss_bar=excluded.boss_bar")) {
-            s.setString(1, p.id().toString()); s.setString(2, p.name()); s.setBoolean(3, p.notifications()); s.setString(4, p.pending().toPlainString()); s.setBoolean(5, p.bossBar()); s.executeUpdate();
+        try (var s = db.prepareStatement("INSERT INTO players (uuid,name,notifications,pending,boss_bar,payday_chat,payday_at) VALUES (?,?,?,?,?,?,?) ON CONFLICT(uuid) DO UPDATE SET name=excluded.name, notifications=excluded.notifications, pending=excluded.pending, boss_bar=excluded.boss_bar, payday_chat=excluded.payday_chat, payday_at=excluded.payday_at")) {
+            s.setString(1, p.id().toString()); s.setString(2, p.name()); s.setBoolean(3, p.notifications()); s.setString(4, p.pending().toPlainString()); s.setBoolean(5, p.bossBar());
+            s.setBoolean(6, p.paydayChat()); s.setLong(7, p.paycheck().next()); s.executeUpdate();
         }
         try (var s = db.prepareStatement("INSERT INTO progress VALUES (?,?,?) ON CONFLICT(uuid,job) DO UPDATE SET xp=excluded.xp")) {
             for (var entry : p.xp().entrySet()) {
                 s.setString(1, p.id().toString()); s.setString(2, entry.getKey()); s.setDouble(3, entry.getValue()); s.addBatch();
+            }
+            s.executeBatch();
+        }
+        try (var s = db.prepareStatement("DELETE FROM paycheck_jobs WHERE uuid=?")) { s.setString(1, p.id().toString()); s.executeUpdate(); }
+        try (var s = db.prepareStatement("INSERT INTO paycheck_jobs VALUES (?,?,?,?)")) {
+            for (boolean due : List.of(false, true)) for (var entry : (due ? p.paycheck().due() : p.paycheck().current()).entrySet()) {
+                s.setString(1, p.id().toString()); s.setString(2, entry.getKey()); s.setString(3, entry.getValue().toPlainString()); s.setBoolean(4, due); s.addBatch();
             }
             s.executeBatch();
         }
@@ -171,6 +195,7 @@ public final class DataStore implements AutoCloseable {
             for (var payment : interrupted) {
                 var profile = players.get(payment.player());
                 profile.pending = profile.pending.add(payment.amount());
+                profile.paycheck.refund(payment.jobs());
                 write(profile.snapshot());
                 try (var s = db.prepareStatement("UPDATE payments SET status='RETRIED' WHERE id=? AND status='RESERVED'")) {
                     s.setString(1, payment.id()); s.executeUpdate();
@@ -193,6 +218,12 @@ public final class DataStore implements AutoCloseable {
                 }
                 s.executeBatch();
             }
+            try (var s = db.prepareStatement("INSERT INTO payment_jobs VALUES (?,?,?)")) {
+                for (var reservation : reservations) for (var entry : reservation.payment().jobs().entrySet()) {
+                    s.setString(1, reservation.payment().id()); s.setString(2, entry.getKey()); s.setString(3, entry.getValue().toPlainString()); s.addBatch();
+                }
+                s.executeBatch();
+            }
         });
     }
 
@@ -212,9 +243,16 @@ public final class DataStore implements AutoCloseable {
     }
 
     public List<Payment> unresolved() throws SQLException {
+        var breakdowns = new HashMap<String, Map<String, BigDecimal>>();
+        try (var s = db.createStatement(); var rows = s.executeQuery("SELECT j.* FROM payment_jobs j JOIN payments p ON p.id=j.payment WHERE p.status='RESERVED'")) {
+            while (rows.next()) breakdowns.computeIfAbsent(rows.getString("payment"), ignored -> new HashMap<>()).put(rows.getString("job"), new BigDecimal(rows.getString("amount")));
+        }
         var payments = new ArrayList<Payment>();
         try (var s = db.createStatement(); var rows = s.executeQuery("SELECT * FROM payments WHERE status='RESERVED' ORDER BY created,id")) {
-            while (rows.next()) payments.add(new Payment(rows.getString("id"), UUID.fromString(rows.getString("uuid")), rows.getString("name"), new BigDecimal(rows.getString("amount"))));
+            while (rows.next()) {
+                String id = rows.getString("id"); BigDecimal amount = new BigDecimal(rows.getString("amount"));
+                payments.add(new Payment(id, UUID.fromString(rows.getString("uuid")), rows.getString("name"), amount, breakdowns.getOrDefault(id, Map.of(Paycheck.PREVIOUS, amount))));
+            }
         }
         return payments;
     }

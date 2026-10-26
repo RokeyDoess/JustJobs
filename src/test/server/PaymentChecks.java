@@ -26,6 +26,7 @@ public final class PaymentChecks extends ReleaseChecks {
     @Override void start() throws Exception {
         jobs = (JustJobsPlugin) Bukkit.getPluginManager().getPlugin("JustJobs");
         check(jobs != null && jobs.isEnabled(), "JustJobs runs with Vault as the only required plugin");
+        immediatePayments();
         check(Bukkit.getPluginManager().getPlugin("Essentials") == null, "generic-provider tests have no Essentials installation");
         world = Bukkit.getWorlds().getFirst();
         worker = (ExecutorService) field(jobs, "worker"); store = (DataStore) field(jobs, "store");
@@ -59,7 +60,7 @@ public final class PaymentChecks extends ReleaseChecks {
         });
     }
     void reload() { jobs.onCommand(Bukkit.getConsoleSender(), jobs.getCommand("jobs"), "jobs", new String[]{"reload"}); }
-    void award(UUID id) { jobs.award(player(id, "Wallet" + id.getLeastSignificantBits()), JobRegistry.Activity.PLAYER_KILL, null, null, 1.25); }
+    void award(UUID id) { jobs.award(player(id, "Wallet" + id.getLeastSignificantBits()), JobRegistry.Activity.PLAYER_KILL, null, null, 2.5); }
     void afterRecovery() throws Exception {
         check(attempts.get(UNKNOWN) == 1, "balance recovery settles the original deposit once");
         check(balances.get(CANCELLED).compareTo(new BigDecimal("12")) == 0 && jobs.players().get(CANCELLED).pending.compareTo(new BigDecimal("0.5")) == 0, "canceled payments recover automatically without losing the fraction");

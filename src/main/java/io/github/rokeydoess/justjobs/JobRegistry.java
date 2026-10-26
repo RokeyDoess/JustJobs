@@ -129,7 +129,7 @@ public record JobRegistry(List<Job> jobs) {
                 if (rules.isEmpty()) throw new IllegalArgumentException("Job needs at least one rule");
                 jobs.add(new Job(id, entry.getString("name", id), entry.getString("description", ""), icon, color,
                         ConfigValues.bool(entry, "natural-only", true), ConfigValues.money(entry, "hourly-income-limit", null),
-                        ConfigValues.integer(entry, "distance-per-reward", 200, 1, 1_000_000),
+                        ConfigValues.integer(entry, "distance-per-reward", 500, 1, 1_000_000),
                         curve, List.copyOf(rules)));
             } catch (Exception e) { throw new IllegalArgumentException("Invalid job '" + id + "': " + e.getMessage(), e); }
         }

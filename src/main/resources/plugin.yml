@@ -1,5 +1,5 @@
 name: JustJobs
-version: '1.0.0'
+version: '1.0.1'
 main: io.github.rokeydoess.justjobs.JustJobsPlugin
 api-version: '26.3'
 description: Automatic survival jobs, levels, and economy rewards.
@@ -9,7 +9,7 @@ depend: [Vault]
 commands:
   jobs:
     description: View your jobs and leaderboards.
-    usage: /jobs [leaderboard|notifications|bossbar|reload|earnings|backup]
+    usage: /jobs [leaderboard|notifications|bossbar|payday|reload|earnings|backup]
     permission: justjobs.use
 permissions:
   justjobs.use:

@@ -19,6 +19,7 @@ public final class EconomyChecks extends ReleaseChecks {
     @Override void start() throws Exception {
         jobs = (JustJobsPlugin) Bukkit.getPluginManager().getPlugin("JustJobs");
         check(jobs != null && jobs.isEnabled(), "JustJobs starts with a real Vault economy");
+        immediatePayments();
         world = Bukkit.getWorlds().getFirst();
         provider = Bukkit.getServicesManager().getRegistration(Economy.class).getProvider();
         check(provider.getClass().getName().contains("essentials"), "compatibility run uses the real EssentialsX Vault provider");
@@ -50,8 +51,8 @@ public final class EconomyChecks extends ReleaseChecks {
         config.set("storage.autosave-seconds", 1);
         config.save(jobs.getDataFolder().toPath().resolve("config.yml").toFile());
         jobs.onCommand(Bukkit.getConsoleSender(), jobs.getCommand("jobs"), "jobs", new String[]{"reload"});
-        jobs.award(player, JobRegistry.Activity.PLAYER_KILL, null, null, 1.25);
-        jobs.award(player(limited.getUniqueId(), limited.getName()), JobRegistry.Activity.PLAYER_KILL, null, null, 1.25);
+        jobs.award(player, JobRegistry.Activity.PLAYER_KILL, null, null, 2.5);
+        jobs.award(player(limited.getUniqueId(), limited.getName()), JobRegistry.Activity.PLAYER_KILL, null, null, 2.5);
         later(80, () -> {
             Bukkit.getServicesManager().unregister(Economy.class, provider);
             later(5, this::checkLimitedBalance);

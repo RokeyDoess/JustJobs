@@ -18,6 +18,7 @@ class DataStoreTest {
         player.pending = new BigDecimal("0.00012345");
         player.notifications = false;
         player.bossBar = false;
+        player.paydayChat = false;
         player.travel.add("exploring", 249.5, 250);
         long now = System.currentTimeMillis();
         player.earnings.credit("hunting", new BigDecimal("99.50"), new BigDecimal("100"), now);
@@ -30,6 +31,7 @@ class DataStoreTest {
             assertEquals("Rokey", loaded.name);
             assertFalse(loaded.notifications);
             assertFalse(loaded.bossBar);
+            assertFalse(loaded.paydayChat);
             assertEquals(250, loaded.travel.add("exploring", .5, 250));
             assertEquals(new BigDecimal("0.50"), loaded.earnings.credit("hunting", BigDecimal.TEN, new BigDecimal("100"), now));
             assertEquals(123L, store.loadPairs().get("pair"));
@@ -114,6 +116,28 @@ class DataStoreTest {
         assertThrows(java.sql.SQLException.class, () -> new DataStore(file));
         try (var connection = java.sql.DriverManager.getConnection("jdbc:sqlite:" + file); var s = connection.createStatement(); var rows = s.executeQuery("PRAGMA user_version")) {
             assertTrue(rows.next()); assertEquals(99, rows.getInt(1));
+        }
+    }
+    @Test void paycheckPeriodsAndReservedBreakdownsSurviveRecovery() throws Exception {
+        var p = new PlayerProfile(UUID.randomUUID(), "Paycheck");
+        long now = System.currentTimeMillis();
+        p.paycheck.earn("mining", new BigDecimal("12.37"), now, 3_600_000, false);
+        p.paycheck.earn("fishing", new BigDecimal("2.50"), now, 3_600_000, true);
+        p.pending = new BigDecimal("14.87");
+        var jobs = p.paycheck.take(new BigDecimal("12")); p.pending = p.pending.subtract(new BigDecimal("12"));
+        var payment = new DataStore.Payment("payday", p.id, p.name, new BigDecimal("12"), jobs);
+        Path file = dir.resolve("paychecks.db");
+        try (var store = new DataStore(file)) { store.reserve(p.snapshot(), payment); }
+        try (var store = new DataStore(file)) {
+            var loaded = store.load(); var restored = loaded.get(p.id);
+            assertEquals(p.paycheck.snapshot(), restored.paycheck.snapshot());
+            assertEquals(jobs, store.unresolved().getFirst().jobs());
+            assertEquals(1, store.recoverInterrupted(loaded));
+            restored = store.load().get(p.id);
+            assertEquals(new BigDecimal("12.37"), restored.paycheck.available());
+            assertEquals(new BigDecimal("2.50"), restored.paycheck.snapshot().current().get("fishing"));
+            assertEquals(new BigDecimal("14.87"), restored.pending);
+            assertEquals(0, store.recoverInterrupted(store.load()));
         }
     }
 }

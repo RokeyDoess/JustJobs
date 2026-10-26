@@ -107,7 +107,7 @@ public final class ActivityListener implements Listener {
             plugin.award(killer, PLAYER_KILL, null, victim.getType(), 1);
             plugin.save();
         } else {
-            if (!plugin.settings().getBoolean("rules.reward-spawner-mobs", true)
+            if (!plugin.settings().getBoolean("rules.reward-spawner-mobs", false)
                     && (e.getEntity().fromMobSpawner() || e.getEntity().getPersistentDataContainer().has(spawned, PersistentDataType.BYTE))) return;
             plugin.award(killer, MOB_KILL, null, e.getEntityType(), 1);
         }

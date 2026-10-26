@@ -1,15 +1,21 @@
 # Jobs themselves live in jobs.yml. /jobs reload applies every setting.
-config-version: 1
+config-version: 2
 economy:
   # Shown before money amounts in menus and messages. Use '' for no symbol.
   currency-symbol: '$'
   whole-number-payouts: true
+  # Shared real-time paydays. 60 minutes pays on the hour, including offline players.
+  payday-enabled: true
+  payday-interval-minutes: 60
   # Per player, per job, in a rolling hour. 0 disables the cap. XP is never capped.
   hourly-income-limit-per-job: '100'
-  # Failed/unavailable payments retry on this interval. New earnings pay as soon as possible.
+  # Released payments retry on this interval; the payday schedule holds new earnings.
   payout-interval-seconds: 10
+  # Used for immediate payouts when payday-enabled is false.
   payout-chat: false
 feedback:
+  payday-chat: true
+  payday-chat-default: true
   level-up-chat: true
   level-up-chat-default: true
   leaderboard-preview-size: 5
@@ -27,9 +33,14 @@ rules:
   excluded-worlds: []
   # Survival and adventure players earn rewards; creative and spectators never do.
   pvp-pair-cooldown-seconds: 60
-  reward-spawner-mobs: true
+  # False excludes spawners, trial spawners, spawn eggs, and other artificial spawns.
+  reward-spawner-mobs: false
   travel-sample-ticks: 20
   travel-minimum-displacement: 0.5
   # Walking counts actual horizontal movement, including jumps. This is the per-second safety limit.
   maximum-walk-blocks-per-sample: 12
   maximum-sail-blocks-per-sample: 35
+development:
+  # Periodic server-log summaries, including job totals and the top 20 player/job rows.
+  verbose-logging: false
+  summary-interval-seconds: 300

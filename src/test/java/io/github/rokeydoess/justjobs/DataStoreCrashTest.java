@@ -50,6 +50,7 @@ class DataStoreCrashTest {
             store.save(List.of(player.snapshot()), Map.of());
             if (!args[1].equals("saved")) {
                 player.pending = new BigDecimal("0.37");
+                player.paycheck.take(new BigDecimal("12"));
                 store.reserve(player.snapshot(), new DataStore.Payment("crash-payment", PLAYER, player.name, new BigDecimal("12")));
                 if (args[1].equals("settled")) store.settle("crash-payment", "PAID", player.snapshot());
             }

@@ -51,6 +51,9 @@ public final class JustJobsPlugin extends JavaPlugin {
     private long lastPrune;
     private boolean closing;
     private boolean paymentBatchInFlight;
+    private long paydayBoundary;
+    private Diagnostics diagnostics;
+    private final Map<UUID, BigDecimal> reservedAmounts = new HashMap<>();
     private record Display(BossBar bar, String job, long shown, long expires) { }
 
     @Override public void onEnable() {
@@ -68,6 +71,7 @@ public final class JustJobsPlugin extends JavaPlugin {
             natural = new NaturalBlocks(this);
             menus = new JobsMenu(this);
             activities = new ActivityListener(this, natural);
+            diagnostics = new Diagnostics(getLogger());
             getServer().getPluginManager().registerEvents(natural, this);
             getServer().getPluginManager().registerEvents(activities, this);
             getServer().getPluginManager().registerEvents(new CraftingListener(this), this);
@@ -87,7 +91,7 @@ public final class JustJobsPlugin extends JavaPlugin {
         var next = new YamlConfiguration();
         next.options().parseComments(true);
         next.load(new File(getDataFolder(), "config.yml"));
-        for (String section : List.of("economy", "feedback", "storage", "progression", "rules"))
+        for (String section : List.of("economy", "feedback", "storage", "progression", "rules", "development"))
             if (next.contains(section) && !next.isConfigurationSection(section)) throw new IllegalArgumentException(section + " must be a section");
         ConfigUpgrade.settings(next);
         YamlConfiguration defaults;
@@ -95,15 +99,17 @@ public final class JustJobsPlugin extends JavaPlugin {
             defaults = YamlConfiguration.loadConfiguration(reader);
         }
         for (String key : defaults.getKeys(true)) if (!defaults.isConfigurationSection(key) && !next.contains(key)) next.set(key, defaults.get(key));
-        ConfigValues.keys(next, Set.of("config-version", "economy", "feedback", "storage", "progression", "rules"));
-        for (String section : List.of("economy", "feedback", "storage", "progression", "rules")) {
+        ConfigValues.keys(next, Set.of("config-version", "economy", "feedback", "storage", "progression", "rules", "development"));
+        for (String section : List.of("economy", "feedback", "storage", "progression", "rules", "development")) {
             if (!next.isConfigurationSection(section)) throw new IllegalArgumentException(section + " must be a section");
             ConfigValues.keys(next.getConfigurationSection(section), defaults.getConfigurationSection(section).getKeys(false));
         }
         for (String key : List.of("storage.autosave-seconds", "economy.payout-interval-seconds", "feedback.boss-bar-seconds", "rules.travel-sample-ticks", "rules.pvp-pair-cooldown-seconds"))
             ConfigValues.integer(next, key, defaults.getLong(key), 1, 86400);
-        for (String key : List.of("economy.whole-number-payouts", "economy.payout-chat", "feedback.level-up-chat", "feedback.level-up-chat-default", "feedback.boss-bar", "rules.reward-spawner-mobs"))
+        for (String key : List.of("economy.whole-number-payouts", "economy.payout-chat", "economy.payday-enabled", "feedback.payday-chat", "feedback.payday-chat-default", "feedback.level-up-chat", "feedback.level-up-chat-default", "feedback.boss-bar", "rules.reward-spawner-mobs", "development.verbose-logging"))
             ConfigValues.bool(next, key, defaults.getBoolean(key));
+        ConfigValues.integer(next, "economy.payday-interval-minutes", 60, 1, 1440);
+        ConfigValues.integer(next, "development.summary-interval-seconds", 300, 10, 3600);
         ConfigValues.money(next, "economy.hourly-income-limit-per-job", new BigDecimal("100"));
         ConfigValues.text(next, "economy.currency-symbol", "$", 16);
         ConfigValues.integer(next, "feedback.leaderboard-preview-size", 5, 1, 10);
@@ -135,6 +141,12 @@ public final class JustJobsPlugin extends JavaPlugin {
     private void scheduleTasks() {
         scheduled.forEach(BukkitTask::cancel);
         scheduled.clear();
+        long now = System.currentTimeMillis();
+        paydayBoundary = Paycheck.next(now, paydayInterval());
+        for (UUID id : unpaid) {
+            players.get(id).paycheck.reschedule(now, paydayInterval(), paydayEnabled()); dirty.add(id);
+        }
+        diagnostics.configure(settings.getBoolean("development.verbose-logging", false), settings.getLong("development.summary-interval-seconds", 300) * 1000, now);
         scheduled.add(Bukkit.getScheduler().runTaskTimer(this, this::save,
                 settings.getLong("storage.autosave-seconds") * 20, settings.getLong("storage.autosave-seconds") * 20));
         scheduled.add(Bukkit.getScheduler().runTaskTimer(this, () -> { refreshEconomy(); queueUnpaid(); },
@@ -155,6 +167,7 @@ public final class JustJobsPlugin extends JavaPlugin {
         if (profile == null) {
             profile = new PlayerProfile(player.getUniqueId(), player.getName());
             profile.notifications = settings.getBoolean("feedback.level-up-chat-default", true);
+            profile.paydayChat = settings.getBoolean("feedback.payday-chat-default", true);
             players.put(profile.id, profile); dirty.add(profile.id);
         } else if (!profile.name.equals(player.getName())) { profile.name = player.getName(); dirty.add(profile.id); }
         return profile;
@@ -197,6 +210,8 @@ public final class JustJobsPlugin extends JavaPlugin {
             profile.xp.put(job.id(), after);
             BigDecimal credited = profile.earnings.credit(job.id(), money, hourlyLimit(job), now);
             profile.pending = profile.pending.add(credited);
+            profile.paycheck.earn(job.id(), credited, now, paydayInterval(), paydayEnabled());
+            if (diagnostics != null) diagnostics.award(profile, job.id(), xp, money, credited);
             dirty.add(profile.id);
             if (credited.signum() > 0) { payoutQueue.add(profile.id); unpaid.add(profile.id); }
             var progress = job.progression().progress(after);
@@ -269,6 +284,9 @@ public final class JustJobsPlugin extends JavaPlugin {
         payoutQueue.addAll(unpaid);
     }
     private void flushPayouts() {
+        long now = System.currentTimeMillis();
+        if (diagnostics != null) diagnostics.tick(now);
+        if (now >= paydayBoundary) { paydayBoundary = Paycheck.next(now, paydayInterval()); queueUnpaid(); }
         if (economy == null || storageFailed || paymentBatchInFlight) return;
         int budget = 25;
         var reservations = new ArrayList<DataStore.Reservation>();
@@ -277,12 +295,16 @@ public final class JustJobsPlugin extends JavaPlugin {
             var id = candidates.next(); candidates.remove();
             var profile = players.get(id);
             if (paying.contains(profile.id)) continue;
-            BigDecimal amount = economy.payable(profile.pending);
+            profile.paycheck.reconcile(profile.pending);
+            if (profile.paycheck.advance(now, paydayInterval(), paydayEnabled())) dirty.add(id);
+            BigDecimal amount = economy.payable(profile.paycheck.available());
             if (amount.signum() <= 0) continue;
             paying.add(profile.id);
+            reservedAmounts.put(profile.id, amount);
             profile.pending = profile.pending.subtract(amount);
+            var breakdown = profile.paycheck.take(amount);
             dirty.add(profile.id);
-            var payment = new DataStore.Payment(UUID.randomUUID().toString(), profile.id, profile.name, amount);
+            var payment = new DataStore.Payment(UUID.randomUUID().toString(), profile.id, profile.name, amount, breakdown);
             reservations.add(new DataStore.Reservation(profile.snapshot(), payment));
         }
         if (reservations.isEmpty()) return;
@@ -314,11 +336,16 @@ public final class JustJobsPlugin extends JavaPlugin {
         }
         var settlements = new ArrayList<DataStore.Settlement>();
         var succeeded = new HashSet<UUID>();
+        var paidJobs = new HashMap<String, Map<String, BigDecimal>>();
         for (var reservation : completed) {
             var payment = reservation.payment();
             var profile = players.get(payment.player());
             BigDecimal credited = results.get(payment.id()).credited();
+            var remainder = new HashMap<>(payment.jobs());
+            paidJobs.put(payment.id(), Paycheck.take(remainder, credited));
+            profile.paycheck.refund(remainder);
             profile.pending = profile.pending.add(payment.amount().subtract(credited));
+            reservedAmounts.put(profile.id, credited);
             if (credited.signum() > 0) succeeded.add(profile.id);
             dirty.add(profile.id);
             settlements.add(new DataStore.Settlement(payment.id(), credited.compareTo(payment.amount()) == 0 ? "PAID" : credited.signum() > 0 ? "PARTIAL" : "REFUNDED", profile.snapshot()));
@@ -329,13 +356,16 @@ public final class JustJobsPlugin extends JavaPlugin {
                 for (var settlement : settlements) {
                     var profile = players.get(settlement.player().id());
                     paying.remove(profile.id);
+                    reservedAmounts.remove(profile.id);
                     if (profile.pending.signum() == 0) unpaid.remove(profile.id);
                     if (succeeded.contains(profile.id) && profile.pending.signum() > 0) payoutQueue.add(profile.id);
                 }
-                if (settings.getBoolean("economy.payout-chat", false)) for (var reservation : completed) {
+                for (var reservation : completed) {
                     var payment = reservation.payment(); var credited = results.get(payment.id()).credited();
                     var player = Bukkit.getPlayer(payment.player());
-                    if (player != null && credited.signum() > 0) player.sendMessage(Component.text("Jobs paid " + currencyRate(credited) + ".", NamedTextColor.GOLD));
+                    if (diagnostics != null) diagnostics.payment(payment, credited, paidJobs.get(payment.id()));
+                    var profile = players.get(payment.player());
+                    notifyPayday(player, profile, credited, paidJobs.get(payment.id()));
                 }
                 if (ownsBatch) paymentBatchInFlight = false;
             });
@@ -374,15 +404,16 @@ public final class JustJobsPlugin extends JavaPlugin {
         if (sub.equals("notifications")) {
             toggleNotifications(player);
         } else if (sub.equals("bossbar")) toggleBossBar(player);
+        else if (sub.equals("payday")) togglePaydayChat(player);
         else if (sub.equals("leaderboard")) menus.open(player, true, 0, null);
         else if (sub.isEmpty()) menus.open(player, false, 0, null);
-        else player.sendMessage("Usage: /jobs [leaderboard|notifications|bossbar]");
+        else player.sendMessage("Usage: /jobs [leaderboard|notifications|bossbar|payday]");
         return true;
     }
 
     @Override public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
         if (args.length != 1) return List.of();
-        var choices = new ArrayList<>(List.of("leaderboard", "notifications", "bossbar"));
+        var choices = new ArrayList<>(List.of("leaderboard", "notifications", "bossbar", "payday"));
         if (sender.hasPermission("justjobs.admin")) choices.addAll(List.of("reload", "earnings", "backup"));
         return choices.stream().filter(s -> s.startsWith(args[0].toLowerCase(java.util.Locale.ROOT))).toList();
     }
@@ -420,6 +451,7 @@ public final class JustJobsPlugin extends JavaPlugin {
             } catch (InterruptedException e) { Thread.currentThread().interrupt(); return; }
         }
         if (store != null) try { store.close(); } catch (Exception e) { getLogger().log(Level.SEVERE, "Could not close storage", e); }
+        if (diagnostics != null) diagnostics.flush(System.currentTimeMillis());
     }
 
     public void toggleBossBar(Player player) {
@@ -436,6 +468,28 @@ public final class JustJobsPlugin extends JavaPlugin {
         dirty.add(profile.id);
         player.sendMessage("Job level-up messages " + (profile.notifications ? "enabled." : "disabled."));
         save();
+    }
+    public boolean paydayEnabled() { return settings.getBoolean("economy.payday-enabled", true); }
+    public long paydayInterval() { return settings.getLong("economy.payday-interval-minutes", 60) * 60_000; }
+    public long nextPayday() { return Paycheck.next(System.currentTimeMillis(), paydayInterval()); }
+    public BigDecimal unpaidEarnings(PlayerProfile profile) { return profile.pending.add(reservedAmounts.getOrDefault(profile.id, BigDecimal.ZERO)); }
+    public void togglePaydayChat(Player player) {
+        var profile = profile(player); profile.paydayChat = !profile.paydayChat; dirty.add(profile.id);
+        player.sendMessage("Payday messages " + (profile.paydayChat ? "enabled." : "disabled.")); save();
+    }
+    public Component paydayMessage(BigDecimal amount, Map<String, BigDecimal> jobs) {
+        Component hover = Component.text("Paycheck breakdown", NamedTextColor.GOLD);
+        for (var entry : new java.util.TreeMap<>(jobs).entrySet()) if (entry.getValue().signum() > 0) {
+            var job = registry.get(entry.getKey());
+            String name = job != null ? job.name() : entry.getKey().equals(Paycheck.PREVIOUS) ? "Previous earnings" : entry.getKey();
+            hover = hover.append(Component.newline()).append(Component.text(name + ": " + currencyRate(entry.getValue()), NamedTextColor.GRAY));
+        }
+        return Component.empty().append(Component.text("Payday!", NamedTextColor.GOLD).hoverEvent(net.kyori.adventure.text.event.HoverEvent.showText(hover)))
+                .append(Component.text(" " + currencyRate(amount) + " has been deposited into your account.", NamedTextColor.GREEN));
+    }
+    public void notifyPayday(Player player, PlayerProfile profile, BigDecimal credited, Map<String, BigDecimal> jobs) {
+        if (player != null && credited.signum() > 0 && profile.paydayChat && settings.getBoolean("feedback.payday-chat", true)
+                && (paydayEnabled() || settings.getBoolean("economy.payout-chat", false))) player.sendMessage(paydayMessage(credited, jobs));
     }
     public String currencyRate(BigDecimal value) {
         return settings.getString("economy.currency-symbol", "$") + value.stripTrailingZeros().toPlainString();

@@ -24,6 +24,7 @@ public final class CraftingChecks extends ReleaseChecks {
     @Override void start() throws Exception {
         jobs = (JustJobsPlugin) Bukkit.getPluginManager().getPlugin("JustJobs");
         check(jobs != null && jobs.isEnabled(), "crafting build starts on Paper");
+        immediatePayments();
         world = Bukkit.getWorlds().getFirst();
         worker = (ExecutorService) field(jobs, "worker"); store = (DataStore) field(jobs, "store");
         installProvider();

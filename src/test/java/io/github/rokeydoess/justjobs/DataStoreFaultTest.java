@@ -36,6 +36,7 @@ class DataStoreFaultTest {
             try (var statement = other.createStatement()) { statement.execute("BEGIN IMMEDIATE"); }
             var payment = new DataStore.Payment("locked-attempt", player.id, player.name, BigDecimal.TEN);
             player.pending = BigDecimal.ZERO;
+            player.paycheck.take(BigDecimal.TEN);
             assertThrows(java.sql.SQLException.class, () -> store.reserve(player.snapshot(), payment));
             assertEquals(BigDecimal.TEN, store.load().get(player.id).pending);
             assertTrue(store.unresolved().isEmpty());

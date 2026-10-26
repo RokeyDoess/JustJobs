@@ -33,9 +33,9 @@ class ConfigUpgradeTest {
         yaml.set("jobs.sailor.rules", List.of(Map.of("activity", "sail", "money", "0.123")));
         yaml.set("jobs.sailor.distance-per-reward", 300);
         ConfigUpgrade.jobs(yaml);
-        assertEquals(6, yaml.getInt("config-version"));
+        assertEquals(8, yaml.getInt("config-version"));
         assertEquals("0.0075", yaml.getMapList("jobs.digger.rules").getFirst().get("money"));
-        assertEquals(200, yaml.getInt("jobs.explorer.distance-per-reward"));
+        assertEquals(500, yaml.getInt("jobs.explorer.distance-per-reward"));
         assertEquals(300, yaml.getInt("jobs.sailor.distance-per-reward"));
         assertEquals("0.123", yaml.getMapList("jobs.sailor.rules").getFirst().get("money"));
     }
@@ -150,8 +150,8 @@ class ConfigUpgradeTest {
         yaml.set("config-version", 5);
         assertTrue(ConfigUpgrade.jobs(yaml));
         assertEquals("0.0085", yaml.getMapList("jobs.digging.rules").getFirst().get("money"));
-        assertEquals("10", yaml.getMapList("jobs.dueling.rules").getFirst().get("money"));
-        assertEquals(200, yaml.getInt("jobs.exploring.distance-per-reward"));
+        assertEquals("5", yaml.getMapList("jobs.dueling.rules").getFirst().get("money"));
+        assertEquals(500, yaml.getInt("jobs.exploring.distance-per-reward"));
         assertEquals("0.0075", yaml.getMapList("jobs.mining.rules").getFirst().get("money"));
         yaml.set("config-version", 5); yaml.set("jobs.exploring.distance-per-reward", 700);
         yaml.set("jobs.digging.rules", List.of(Map.of("activity", "block-break", "materials", List.of("DIRT"), "money", "4")));
@@ -160,5 +160,79 @@ class ConfigUpgradeTest {
         assertEquals(700, yaml.getInt("jobs.exploring.distance-per-reward"));
         assertEquals("4", yaml.getMapList("jobs.digging.rules").getFirst().get("money"));
         assertEquals("50", yaml.getMapList("jobs.dueling.rules").getFirst().get("money"));
+    }
+    @Test void stableDefaultsUpgradeWithoutChangingXpOrRepeatingEarlierBalanceChanges() {
+        var yaml = YamlConfiguration.loadConfiguration(new java.io.InputStreamReader(getClass().getResourceAsStream("/jobs.yml")));
+        yaml.set("config-version", 6);
+        yaml.set("jobs.fishing.rules", List.of(Map.of("activity", "fish", "materials", List.of("*"), "money", "0.75", "xp", 9, "description", "Rod catch")));
+        yaml.set("jobs.exploring.distance-per-reward", 200);
+        yaml.set("jobs.sailing.distance-per-reward", 200);
+        var digging = new java.util.LinkedHashMap<String, Object>();
+        yaml.getMapList("jobs.digging.rules").getFirst().forEach((key, value) -> digging.put(key.toString(), value));
+        digging.put("money", "0.0075"); yaml.set("jobs.digging.rules", List.of(digging));
+        assertTrue(ConfigUpgrade.jobs(yaml));
+        var fishing = yaml.getMapList("jobs.fishing.rules").getFirst();
+        assertEquals("0.25", fishing.get("money"));
+        assertEquals(9, fishing.get("xp"));
+        assertEquals("Rod catch", fishing.get("description"));
+        assertEquals(500, yaml.getInt("jobs.exploring.distance-per-reward"));
+        assertEquals(500, yaml.getInt("jobs.sailing.distance-per-reward"));
+        assertEquals("0.0075", yaml.getMapList("jobs.digging.rules").getFirst().get("money"));
+        assertEquals(8, yaml.getInt("config-version"));
+        assertFalse(ConfigUpgrade.jobs(yaml));
+    }
+    @Test void fishingAndTravelUpgradeKeepsCustomRewardsSelectorsAndIntervals() {
+        var yaml = YamlConfiguration.loadConfiguration(new java.io.InputStreamReader(getClass().getResourceAsStream("/jobs.yml")));
+        yaml.set("config-version", 6);
+        yaml.set("jobs.fishing.rules", List.of(Map.of("activity", "fish", "materials", List.of("*"), "money", "1.50", "xp", 5)));
+        yaml.set("jobs.exploring.distance-per-reward", 150);
+        yaml.set("jobs.sailing.distance-per-reward", 900);
+        ConfigUpgrade.jobs(yaml);
+        assertEquals("1.50", yaml.getMapList("jobs.fishing.rules").getFirst().get("money"));
+        assertEquals(150, yaml.getInt("jobs.exploring.distance-per-reward"));
+        assertEquals(900, yaml.getInt("jobs.sailing.distance-per-reward"));
+        yaml.set("config-version", 6);
+        yaml.set("jobs.fishing.rules", List.of(Map.of("activity", "fish", "materials", List.of("COD"), "money", "0.75", "xp", 5)));
+        ConfigUpgrade.jobs(yaml);
+        assertEquals("0.75", yaml.getMapList("jobs.fishing.rules").getFirst().get("money"));
+        assertEquals(List.of("COD"), yaml.getMapList("jobs.fishing.rules").getFirst().get("materials"));
+    }
+    @Test void spawnerExclusionUpgradesOnceAndCanBeDisabledAfterward() {
+        for (int version : List.of(0, 1)) {
+            var yaml = new YamlConfiguration(); yaml.set("config-version", version);
+            yaml.set("rules.reward-spawner-mobs", true);
+            ConfigUpgrade.settings(yaml);
+            assertFalse(yaml.getBoolean("rules.reward-spawner-mobs"));
+            assertEquals(2, yaml.getInt("config-version"));
+            yaml.set("rules.reward-spawner-mobs", true);
+            ConfigUpgrade.settings(yaml);
+            assertTrue(yaml.getBoolean("rules.reward-spawner-mobs"));
+        }
+        var yaml = new YamlConfiguration(); yaml.set("config-version", 1);
+        yaml.set("rules.reward-spawner-mobs", false);
+        ConfigUpgrade.settings(yaml);
+        assertFalse(yaml.getBoolean("rules.reward-spawner-mobs"));
+        yaml.set("config-version", 1); yaml.set("rules.reward-spawner-mobs", "invalid");
+        ConfigUpgrade.settings(yaml);
+        assertEquals("invalid", yaml.get("rules.reward-spawner-mobs"));
+    }
+    @Test void duelingUpgradePreservesXpAndDoesNotRepeatEarlierDefaultChanges() {
+        var yaml = YamlConfiguration.loadConfiguration(new java.io.InputStreamReader(getClass().getResourceAsStream("/jobs.yml")));
+        yaml.set("config-version", 7);
+        yaml.set("jobs.dueling.rules", List.of(Map.of("activity", "player-kill", "xp", 15, "money", "10")));
+        yaml.set("jobs.fishing.rules", List.of(Map.of("activity", "fish", "materials", List.of("*"), "money", "0.75", "xp", 5)));
+        yaml.set("jobs.exploring.distance-per-reward", 200);
+        yaml.set("jobs.sailing.distance-per-reward", 200);
+        assertTrue(ConfigUpgrade.jobs(yaml));
+        assertEquals("5", yaml.getMapList("jobs.dueling.rules").getFirst().get("money"));
+        assertEquals(15, yaml.getMapList("jobs.dueling.rules").getFirst().get("xp"));
+        assertEquals("0.75", yaml.getMapList("jobs.fishing.rules").getFirst().get("money"));
+        assertEquals(200, yaml.getInt("jobs.exploring.distance-per-reward"));
+        assertEquals(200, yaml.getInt("jobs.sailing.distance-per-reward"));
+        assertFalse(ConfigUpgrade.jobs(yaml));
+        yaml.set("config-version", 7);
+        yaml.set("jobs.dueling.rules", List.of(Map.of("activity", "player-kill", "xp", 15, "money", "20")));
+        ConfigUpgrade.jobs(yaml);
+        assertEquals("20", yaml.getMapList("jobs.dueling.rules").getFirst().get("money"));
     }
 }

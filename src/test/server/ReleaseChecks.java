@@ -21,6 +21,8 @@ import org.bukkit.event.player.PlayerFishEvent;
 import org.bukkit.event.player.PlayerHarvestBlockEvent;
 import org.bukkit.event.enchantment.EnchantItemEvent;
 import org.bukkit.event.entity.EntityDeathEvent;
+import org.bukkit.event.entity.CreatureSpawnEvent;
+import org.bukkit.event.entity.EntityTransformEvent;
 import org.bukkit.event.inventory.*;
 import org.bukkit.event.world.StructureGrowEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
@@ -48,6 +50,7 @@ public class ReleaseChecks extends JavaPlugin implements Listener {
     final Set<UUID> rejected = new HashSet<>();
     final Set<UUID> throwAfter = new HashSet<>();
     final Map<UUID, List<String>> messages = new HashMap<>();
+    final Map<UUID, List<net.kyori.adventure.text.Component>> components = new HashMap<>();
     final Map<UUID, Integer> barsShown = new HashMap<>();
     static final UUID WALK = UUID.fromString("90346abf-b819-470e-bd5c-99401ba42be1");
     JustJobsPlugin jobs;
@@ -105,6 +108,8 @@ public class ReleaseChecks extends JavaPlugin implements Listener {
             case "getWorld" -> world;
             case "getLocation" -> new Location(world, base, 200, 2048);
             case "sendMessage" -> {
+                if (args != null && args.length > 0 && args[0] instanceof net.kyori.adventure.text.Component component)
+                    components.computeIfAbsent(id, ignored -> new ArrayList<>()).add(component);
                 if (args != null && args.length > 0) messages.computeIfAbsent(id, ignored -> new ArrayList<>()).add(
                         args[0] instanceof net.kyori.adventure.text.TextComponent text ? text.content() : String.valueOf(args[0]));
                 yield null;
@@ -132,6 +137,7 @@ public class ReleaseChecks extends JavaPlugin implements Listener {
     void start() throws Exception {
         jobs = (JustJobsPlugin) Bukkit.getPluginManager().getPlugin("JustJobs");
         check(jobs != null && jobs.isEnabled(), "JustJobs starts on Paper");
+        immediatePayments();
         world = Bukkit.getWorlds().getFirst();
         base = 32768;
         world.getChunkAt(base >> 4, 2048 >> 4).addPluginChunkTicket(this);
@@ -149,6 +155,7 @@ public class ReleaseChecks extends JavaPlugin implements Listener {
         protectionChecks();
         newJobChecks();
         reloadChecks();
+        spawnerReloadChecks();
         presentationChecks();
         travelChecks();
         menuChecks();
@@ -173,6 +180,11 @@ public class ReleaseChecks extends JavaPlugin implements Listener {
         });
         Bukkit.getServicesManager().register(Economy.class, provider, this, ServicePriority.Highest);
     }
+    void immediatePayments() throws Exception {
+        var file = jobs.getDataFolder().toPath().resolve("config.yml").toFile();
+        var config = YamlConfiguration.loadConfiguration(file); config.set("economy.payday-enabled", false); config.save(file);
+        jobs.onCommand(Bukkit.getConsoleSender(), jobs.getCommand("jobs"), "jobs", new String[]{"reload"});
+    }
     org.bukkit.block.Block block(int offset) { return world.getBlockAt(base + offset, 200, 2048); }
     void protectionChecks() {
         Listener protection = new Listener() {
@@ -194,7 +206,36 @@ public class ReleaseChecks extends JavaPlugin implements Listener {
                     "another listener can deny placement without rewards or consuming its placement allowance");
         } finally { HandlerList.unregisterAll(protection); }
     }
-    void eventChecks() {
+    Zombie huntingMob(boolean spawner) {
+        var data = world.getPersistentDataContainer().getAdapterContext().newPersistentDataContainer();
+        return (Zombie) Proxy.newProxyInstance(Zombie.class.getClassLoader(), new Class<?>[]{Zombie.class}, (p, method, args) -> switch (method.getName()) {
+            case "getKiller" -> player;
+            case "getType" -> EntityType.ZOMBIE;
+            case "fromMobSpawner" -> spawner;
+            case "getPersistentDataContainer" -> data;
+            default -> empty(method.getReturnType());
+        });
+    }
+    void killMob(Zombie mob) {
+        Bukkit.getPluginManager().callEvent(new EntityDeathEvent(mob, DamageSource.builder(DamageType.GENERIC).build(), new ArrayList<>()));
+    }
+    void spawnerReloadChecks() throws Exception {
+        var file = new java.io.File(jobs.getDataFolder(), "config.yml");
+        var config = YamlConfiguration.loadConfiguration(file);
+        double before = profile.xp("hunting");
+        var money = profile.earnings.total("hunting", System.currentTimeMillis());
+        config.set("rules.reward-spawner-mobs", true); config.save(file);
+        Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "jobs reload");
+        killMob(huntingMob(true));
+        check(profile.xp("hunting") == before + 5 && profile.earnings.total("hunting", System.currentTimeMillis()).subtract(money).compareTo(new BigDecimal("0.40")) == 0,
+                "reload can enable spawner XP and money without migration resetting the choice");
+        config.set("rules.reward-spawner-mobs", false); config.save(file);
+        Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "jobs reload");
+        killMob(huntingMob(true));
+        check(profile.xp("hunting") == before + 5 && profile.earnings.total("hunting", System.currentTimeMillis()).subtract(money).compareTo(new BigDecimal("0.40")) == 0,
+                "reload can disable spawner XP and money immediately");
+    }
+    void eventChecks() throws Exception {
         check(jobs.registry().jobs().size() == 13, "thirteen default jobs load");
         var dirt = block(0); dirt.setType(Material.DIRT, false);
         var cancelledBreak = new BlockBreakEvent(dirt, player); cancelledBreak.setCancelled(true);
@@ -213,17 +254,29 @@ public class ReleaseChecks extends JavaPlugin implements Listener {
         check(profile.xp("treefelling") == 2, "player-grown logs reward");
         history.flush();
         check(!new NaturalBlocks(jobs).eligible(dirt), "block history survives a flush and reload");
-        Zombie mob = (Zombie) Proxy.newProxyInstance(Zombie.class.getClassLoader(), new Class<?>[]{Zombie.class}, (p, method, args) -> switch (method.getName()) {
-            case "getKiller" -> player;
-            case "getType" -> EntityType.ZOMBIE;
-            case "fromMobSpawner" -> true;
-            default -> empty(method.getReturnType());
-        });
+        check(!jobs.settings().getBoolean("rules.reward-spawner-mobs"), "spawner rewards are disabled by default");
+        Zombie mob = huntingMob(true);
         var death = new EntityDeathEvent(mob, DamageSource.builder(DamageType.GENERIC).build(), new ArrayList<>());
         death.setCancelled(true); Bukkit.getPluginManager().callEvent(death);
         check(profile.xp("hunting") == 0, "cancelled deaths never reward");
         death.setCancelled(false); Bukkit.getPluginManager().callEvent(death);
-        check(profile.xp("hunting") == 5, "spawner kills reward by default");
+        check(profile.xp("hunting") == 0 && profile.earnings.total("hunting", System.currentTimeMillis()).signum() == 0,
+                "spawner kills give neither XP nor money by default");
+        killMob(huntingMob(false));
+        check(profile.xp("hunting") == 5 && profile.earnings.total("hunting", System.currentTimeMillis()).compareTo(new BigDecimal("0.40")) == 0,
+                "natural hostile mobs still earn Hunting XP and money");
+        for (var reason : List.of(CreatureSpawnEvent.SpawnReason.SPAWNER, CreatureSpawnEvent.SpawnReason.TRIAL_SPAWNER)) {
+            var spawned = huntingMob(false);
+            Bukkit.getPluginManager().callEvent(new CreatureSpawnEvent(spawned, reason));
+            var restored = huntingMob(false);
+            restored.getPersistentDataContainer().readFromBytes(spawned.getPersistentDataContainer().serializeToBytes());
+            killMob(restored);
+            var transformed = huntingMob(false);
+            Bukkit.getPluginManager().callEvent(new EntityTransformEvent(restored, List.of(transformed), EntityTransformEvent.TransformReason.DROWNED));
+            killMob(transformed);
+            check(profile.xp("hunting") == 5 && profile.earnings.total("hunting", System.currentTimeMillis()).compareTo(new BigDecimal("0.40")) == 0,
+                    reason + " provenance survives saved entity data and transformations");
+        }
         current = Bukkit.createInventory(null, 9);
         for (int button = 0; button < 3; button++) {
             var event = new EnchantItemEvent(player, view(), block(2), new ItemStack(Material.DIAMOND_PICKAXE), button == 2 ? 30 : 1,
@@ -337,7 +390,7 @@ public class ReleaseChecks extends JavaPlugin implements Listener {
         Bukkit.getPluginManager().callEvent(new PlayerFishEvent(builder, caught, hook, EquipmentSlot.HAND, PlayerFishEvent.State.CAUGHT_ENTITY));
         check(progress.xp("fishing") == 0, "cancelled catches, failed attempts, and hooked entities do not reward Fishing");
         fishing.setCancelled(false); Bukkit.getPluginManager().callEvent(fishing);
-        check(progress.xp("fishing") == 5 && progress.earnings.total("fishing", System.currentTimeMillis()).compareTo(new BigDecimal("0.75")) == 0,
+        check(progress.xp("fishing") == 5 && progress.earnings.total("fishing", System.currentTimeMillis()).compareTo(new BigDecimal("0.25")) == 0,
                 "a successful fishing catch earns its configured XP and payment");
         history.flush();
         check(!new NaturalBlocks(jobs).placementRewarded(wire), "default jobs no longer add placement-claim data");
@@ -404,7 +457,7 @@ public class ReleaseChecks extends JavaPlugin implements Listener {
             check(lore(31).stream().anyMatch(line -> line.contains("¤0.02 / custom wiring")), "custom currency symbol and rule description apply on reload");
             check(lore(31).stream().anyMatch(line -> line.contains("¤0.15 / piston")), "a custom rule without a description names its selected material");
             check(lore(19).stream().anyMatch(line -> line.contains("¤0.0085 / soil or sand block")), "small reward rates keep their exact decimal value in the menu");
-            check(lore(4).stream().anyMatch(line -> line.startsWith("Saved earnings: ") && line.contains("¤"))
+            check(lore(4).stream().anyMatch(line -> line.startsWith("Unpaid earnings: ") && line.contains("¤"))
                     && lore(20).stream().anyMatch(line -> line.startsWith("Earned this hour: ¤")), "balances and hourly limits use the configured currency symbol");
             check(jobs.currency(new BigDecimal("0.005")).equals("<¤0.01"), "sub-cent saved balances display their threshold with the configured symbol");
             var active = jobs.settings(); settings.set("economy.currency-symbol", 12); settings.save(settingsFile);
@@ -420,7 +473,8 @@ public class ReleaseChecks extends JavaPlugin implements Listener {
         jobs.toggleBossBar(player);
         check(!profile.bossBar, "player can turn the boss bar off");
         var menus = new JobsMenu(jobs); menus.open(player, false, 0, null);
-        check(current.getSize() == 45 && current.getItem(39).getType() == Material.LEVER && current.getItem(40).getType() == Material.PAPER && current.getItem(41).getType() == Material.BOOK,
+        check(current.getSize() == 45 && current.getItem(38).getType() == Material.LEVER && current.getItem(39).getType() == Material.PAPER
+                        && current.getItem(40).getType() == Material.GOLD_NUGGET && current.getItem(41).getType() == Material.CLOCK && current.getItem(42).getType() == Material.BOOK,
                 "menu feedback and navigation controls are centered");
         check(((JobsMenu.Page) current.getHolder()).getInventory() == current && current.getItem(4).getType() == Material.BOOK && current.getItem(44).getType() == Material.OAK_DOOR,
                 "info is top center and close is bottom right");
@@ -460,11 +514,11 @@ public class ReleaseChecks extends JavaPlugin implements Listener {
         var creative = new InventoryCreativeEvent(view(), InventoryType.SlotType.CONTAINER, 0, new ItemStack(Material.DIAMOND));
         Bukkit.getPluginManager().callEvent(creative);
         check(creative.isCancelled(), "creative inventory actions cannot alter menu items");
-        var toggle = new InventoryClickEvent(view(), InventoryType.SlotType.CONTAINER, 39, ClickType.LEFT, InventoryAction.PICKUP_ALL);
+        var toggle = new InventoryClickEvent(view(), InventoryType.SlotType.CONTAINER, 38, ClickType.LEFT, InventoryAction.PICKUP_ALL);
         menus.click(toggle);
     }
     void travelChecks() throws Exception {
-        check(jobs.registry().get("exploring").distancePerReward() == 200 && jobs.registry().get("sailing").distancePerReward() == 200,
+        check(jobs.registry().get("exploring").distancePerReward() == 500 && jobs.registry().get("sailing").distancePerReward() == 500,
                 "walking and sailing use their configured distance milestones");
         check(jobs.registry().get("dueling").name().equals("Dueling") && jobs.registry().get("treefelling").name().equals("Treefelling"),
                 "default job IDs match their display names");
@@ -477,19 +531,19 @@ public class ReleaseChecks extends JavaPlugin implements Listener {
             case "getFallDistance" -> 1.0f;
             default -> method.invoke(jumpingBase, args);
         });
-        for (int i = 0; i < 799; i++) {
+        for (int i = 0; i < 1999; i++) {
             double x = base + i * .25;
             Bukkit.getPluginManager().callEvent(new PlayerMoveEvent(grounded, new Location(world, x, 200, 2048), new Location(world, x + .25, 200, 2048)));
             Bukkit.getPluginManager().callEvent(new PlayerMoveEvent(jumping, new Location(world, x, 200 + (i % 2), 2048), new Location(world, x + .25, 201 - (i % 2), 2048)));
         }
         check(jobs.profile(grounded).xp("exploring") == 0 && jobs.profile(jumping).xp("exploring") == 0 && barsShown.getOrDefault(WALK, 0) == 0,
-                "travel below 200 blocks awards no XP or money and does not open a boss bar");
+                "travel below 500 blocks awards no XP or money and does not open a boss bar");
         for (Player p : List.of(grounded, jumping))
             Bukkit.getPluginManager().callEvent(new PlayerMoveEvent(p, new Location(world, base, 200, 2048), new Location(world, base + .25, 201, 2048)));
-        check(jobs.profile(grounded).xp("exploring") == 2 && jobs.profile(jumping).xp("exploring") == 2,
+        check(jobs.profile(grounded).xp("exploring") == 5 && jobs.profile(jumping).xp("exploring") == 5,
                 "jumping and grounded walking count exactly the same horizontal distance");
-        check(jobs.profile(grounded).earnings.total("exploring", System.currentTimeMillis()).compareTo(new BigDecimal("0.20")) == 0
-                        && barsShown.getOrDefault(WALK, 0) == 1, "200-block milestone applies the full reward and one boss-bar update");
+        check(jobs.profile(grounded).earnings.total("exploring", System.currentTimeMillis()).compareTo(new BigDecimal("0.50")) == 0
+                        && barsShown.getOrDefault(WALK, 0) == 1, "500-block milestone applies the full reward and one boss-bar update");
         var cancelled = new PlayerMoveEvent(grounded, new Location(world, base, 200, 2048), new Location(world, base + 1, 200, 2048));
         cancelled.setCancelled(true); Bukkit.getPluginManager().callEvent(cancelled);
         Bukkit.getPluginManager().callEvent(new PlayerTeleportEvent(grounded, new Location(world, base, 200, 2048), new Location(world, base + 100, 200, 2048)));
@@ -510,12 +564,12 @@ public class ReleaseChecks extends JavaPlugin implements Listener {
             default -> method.invoke(sailingBase, args);
         });
         activities.sampleSailing(driver[0]);
-        for (int i = 1; i <= 7; i++) { position.set(new Location(world, base + i * 25, 200, 2048)); activities.sampleSailing(driver[0]); }
-        check(jobs.profile(driver[0]).xp("sailing") == 0, "sailing below 200 blocks keeps its reward buffered");
-        position.set(new Location(world, base + 200, 200, 2048)); activities.sampleSailing(driver[0]);
-        check(jobs.profile(driver[0]).xp("sailing") == 2 && jobs.profile(driver[0]).earnings.total("sailing", System.currentTimeMillis()).compareTo(new BigDecimal("0.10")) == 0,
-                "200-block sailing milestone applies its full XP and money reward");
-        for (int i = 1; i <= 5; i++) { position.set(new Location(world, base + 200 + i * .2, 200, 2048)); activities.sampleSailing(driver[0]); }
+        for (int i = 1; i <= 19; i++) { position.set(new Location(world, base + i * 25, 200, 2048)); activities.sampleSailing(driver[0]); }
+        check(jobs.profile(driver[0]).xp("sailing") == 0, "sailing below 500 blocks keeps its reward buffered");
+        position.set(new Location(world, base + 500, 200, 2048)); activities.sampleSailing(driver[0]);
+        check(jobs.profile(driver[0]).xp("sailing") == 5 && jobs.profile(driver[0]).earnings.total("sailing", System.currentTimeMillis()).compareTo(new BigDecimal("0.25")) == 0,
+                "500-block sailing milestone applies its full XP and money reward");
+        for (int i = 1; i <= 5; i++) { position.set(new Location(world, base + 500 + i * .2, 200, 2048)); activities.sampleSailing(driver[0]); }
         check(Math.abs(jobs.profile(driver[0]).travel.distance("sailing") - .6) < 1e-6, "slow sailing buffers small samples instead of discarding their distance");
         activities.resetTravel();
         check(Math.abs(jobs.profile(driver[0]).travel.distance("sailing") - 1) < 1e-6, "a reload flushes unfinished sailing samples into saved travel progress");
@@ -523,10 +577,10 @@ public class ReleaseChecks extends JavaPlugin implements Listener {
     }
     void paymentChecks() {
         rejected.add(RETRY); throwAfter.add(UNCERTAIN);
-        check(jobs.registry().get("dueling").rules().getFirst().money().compareTo(BigDecimal.TEN) == 0, "a default Dueling kill pays ten currency");
+        check(jobs.registry().get("dueling").rules().getFirst().money().compareTo(new BigDecimal("5")) == 0, "a default Dueling kill pays five currency");
         // Seed 12.50 to keep exercising fractional remainders with the whole-dollar Dueling default.
-        jobs.award(player(RETRY, "RetryChecks"), JobRegistry.Activity.PLAYER_KILL, null, EntityType.PLAYER, 1.25);
-        jobs.award(player(UNCERTAIN, "UncertainChecks"), JobRegistry.Activity.PLAYER_KILL, null, EntityType.PLAYER, 1.25);
+        jobs.award(player(RETRY, "RetryChecks"), JobRegistry.Activity.PLAYER_KILL, null, EntityType.PLAYER, 2.5);
+        jobs.award(player(UNCERTAIN, "UncertainChecks"), JobRegistry.Activity.PLAYER_KILL, null, EntityType.PLAYER, 2.5);
     }
     void afterPayments() throws Exception {
         check(profile.bossBar, "boss-bar button applies its toggle after the inventory click");
@@ -620,7 +674,7 @@ public class ReleaseChecks extends JavaPlugin implements Listener {
                 ticks.get(ticks.size() / 2), p95, ticks.getLast()));
         check(p95 < 50, "95% of full server ticks stay inside the 50 ms tick budget under simulated load");
         int kills = (loadTicks + 19) / 20;
-        double traveled = loadTicks * .2, paidDistance = Math.floor((traveled + 1e-6) / 200) * 200;
+        double traveled = loadTicks * .2, paidDistance = Math.floor((traveled + 1e-6) / 500) * 500;
         check(loadPlayers.stream().allMatch(p -> jobs.profile(p).xp("mining") == loadTicks && jobs.profile(p).xp("hunting") == kills * 5), "all simulated actions retain their XP");
         check(loadPlayers.stream().allMatch(p -> Math.abs(jobs.profile(p).xp("exploring") - paidDistance * .01) < 1e-6
                         && Math.abs(jobs.profile(p).travel.distance("exploring") - (traveled - paidDistance)) < 1e-6),
@@ -645,7 +699,10 @@ public class ReleaseChecks extends JavaPlugin implements Listener {
             var owner = current.getItem(10).getData(io.papermc.paper.datacomponent.DataComponentTypes.PROFILE);
             check(owner != null && owner.dynamic() && owner.uuid().equals(MAIN), "leaderboard head identifies its ranked player and resolves skins without a server lookup");
             check(current.getItem(0).getType() == Material.PURPLE_STAINED_GLASS_PANE, "leaderboards use purple borders");
-            var next = new InventoryClickEvent(view(), InventoryType.SlotType.CONTAINER, 42, ClickType.LEFT, InventoryAction.PICKUP_ALL);
+            int nextSlot = java.util.stream.IntStream.range(36, 44).filter(slot -> current.getItem(slot) != null
+                    && current.getItem(slot).getItemMeta().displayName() instanceof net.kyori.adventure.text.TextComponent name
+                    && name.content().equals("Next page")).findFirst().orElseThrow();
+            var next = new InventoryClickEvent(view(), InventoryType.SlotType.CONTAINER, nextSlot, ClickType.LEFT, InventoryAction.PICKUP_ALL);
             menus.click(next);
             later(2, () -> {
                 check(current.getItem(10).getItemMeta().displayName().toString().contains("#22 "), "leaderboard next page starts with rank 22 at the top left");
@@ -665,7 +722,7 @@ public class ReleaseChecks extends JavaPlugin implements Listener {
                 check(current.getItem(19).getItemMeta().lore().stream().filter(line -> line instanceof net.kyori.adventure.text.TextComponent text
                         && text.content().startsWith("#")).count() == 3, "leaderboard preview size is configurable");
                 jobs.settings().set("feedback.leaderboard-preview-size", 5);
-                var chat = new InventoryClickEvent(view(), InventoryType.SlotType.CONTAINER, 40, ClickType.LEFT, InventoryAction.PICKUP_ALL);
+                var chat = new InventoryClickEvent(view(), InventoryType.SlotType.CONTAINER, 39, ClickType.LEFT, InventoryAction.PICKUP_ALL);
                 menus.click(chat);
                 later(2, () -> {
                     check(!profile.notifications, "chat toggle works from the inventory");

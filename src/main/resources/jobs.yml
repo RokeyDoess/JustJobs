@@ -22,7 +22,7 @@
 # natural-only defaults to true for block jobs. False allows grown/generated blocks;
 # hand-placed blocks are still excluded.
 # Travel pays a smaller bonus. Each job is capped at 100 per hour by default.
-config-version: 6
+config-version: 8
 jobs:
   digging:
     name: Digging
@@ -103,7 +103,7 @@ jobs:
       - activity: player-kill
         description: player kill
         xp: 10
-        money: '10'
+        money: '5'
   trading:
     name: Trading
     icon: EMERALD
@@ -121,7 +121,7 @@ jobs:
     color: PURPLE
     description: Explore on foot.
     enabled: true
-    distance-per-reward: 200
+    distance-per-reward: 500
     rules:
       - activity: travel
         description: blocks walked
@@ -133,7 +133,7 @@ jobs:
     color: BLUE
     description: Travel by boat on water.
     enabled: true
-    distance-per-reward: 200
+    distance-per-reward: 500
     rules:
       - activity: sail
         description: blocks sailed
@@ -178,7 +178,7 @@ jobs:
         description: successful catch
         materials: ['*']
         xp: 5
-        money: '0.75'
+        money: '0.25'
   engineering:
     name: Engineering
     icon: PISTON
