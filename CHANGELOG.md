@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Updated the SQLite storage library, Vault API, logging API, and build tools.
+- Updated the test framework. Job settings, rewards, and player data formats are unchanged.
+
 ## 1.0.1 (2026-10-25)
 
 - Added automatic hourly paychecks, with an optional immediate-payout mode. Offline players are paid, fractions carry forward, and missed or rejected payments recover automatically.
