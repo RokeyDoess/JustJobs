@@ -10,7 +10,9 @@ All jobs track automatically. Players don't need a command to start earning.
 | `/jobs notifications` | Toggle your level-up chat messages |
 | `/jobs payday` | Toggle your payday chat messages |
 
-All three feedback options start enabled and are saved per player. They also have buttons in the jobs menu. “Next paycheck” shows the next distribution time, a countdown, and unpaid earnings; click it or reopen the menu to refresh. Hover over “Payday!” in a payment message to see the nonzero job amounts included in that deposit.
+All three feedback options start enabled and are saved per player. Click the comparator at the bottom left of the jobs or leaderboards menu to open **Settings**. The Back button returns to the page you came from.
+
+“Next paycheck” stays on the jobs page. It shows the next distribution time, a countdown, and unpaid earnings; click it or reopen the menu to refresh. Hover over “Payday!” in a payment message to see the nonzero job amounts included in that deposit.
 
 Detailed leaderboards rank players by total job XP, reading left to right from the top row down.
 
@@ -19,7 +21,7 @@ Detailed leaderboards rank players by total job XP, reading left to right from t
 | Command | What it does |
 | --- | --- |
 | `/jobs reload` | Reload both config files and apply every setting |
-| `/jobs earnings [player]` | Show hourly earnings by job and the shared unpaid balance |
+| `/jobs earnings [player]` | Show earnings toward each job's cap and the shared unpaid balance |
 | `/jobs backup` | Save a checked copy of the job database in `plugins/JustJobs/backups/` |
 
 Reload applies payday timing, payout retries, saving, travel intervals, and diagnostic logging too. Changing payday timing keeps unpaid money. Invalid settings leave the previous settings running, with an error explaining what needs fixing.

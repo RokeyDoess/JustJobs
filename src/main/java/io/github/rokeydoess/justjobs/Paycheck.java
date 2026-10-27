@@ -32,8 +32,17 @@ public final class Paycheck {
         next = enabled ? next(now, interval) : 0;
     }
     public void earn(String job, BigDecimal amount, long now, long interval, boolean enabled) {
+        earn(job, amount, BigDecimal.ZERO, now, interval, enabled);
+    }
+    public BigDecimal earn(String job, BigDecimal amount, BigDecimal limit, long now, long interval, boolean enabled) {
         advance(now, interval, enabled);
-        if (amount.signum() > 0) (enabled ? current : due).merge(job, amount, BigDecimal::add);
+        BigDecimal accepted = enabled && limit.signum() > 0
+                ? amount.min(limit.subtract(current.getOrDefault(job, BigDecimal.ZERO)).max(BigDecimal.ZERO)) : amount;
+        if (accepted.signum() > 0) (enabled ? current : due).merge(job, accepted, BigDecimal::add);
+        return accepted;
+    }
+    public BigDecimal earned(String job, long now) {
+        return next > 0 && now >= next ? BigDecimal.ZERO : current.getOrDefault(job, BigDecimal.ZERO);
     }
     public BigDecimal available() { return total(due); }
     public Map<String, BigDecimal> take(BigDecimal amount) { return take(due, amount); }

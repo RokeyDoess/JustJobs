@@ -7,7 +7,8 @@ economy:
   # Shared real-time paydays. 60 minutes pays on the hour, including offline players.
   payday-enabled: true
   payday-interval-minutes: 60
-  # Per player, per job, in a rolling hour. 0 disables the cap. XP is never capped.
+  # Per player, per job: resets each payday, or uses a rolling hour if paydays are off.
+  # The existing key name is kept for compatibility. 0 disables the cap; XP is never capped.
   hourly-income-limit-per-job: '100'
   # Released payments retry on this interval; the payday schedule holds new earnings.
   payout-interval-seconds: 10

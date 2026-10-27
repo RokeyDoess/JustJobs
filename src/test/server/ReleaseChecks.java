@@ -64,6 +64,7 @@ public class ReleaseChecks extends JavaPlugin implements Listener {
     PlayerProfile profile;
     Inventory current;
     int checks;
+    int closedMenus;
     int base;
     long loadStart;
     final List<Long> loadTimes = new ArrayList<>();
@@ -116,6 +117,7 @@ public class ReleaseChecks extends JavaPlugin implements Listener {
             }
             case "showBossBar" -> { barsShown.merge(id, 1, Integer::sum); yield null; }
             case "openInventory" -> { current = (Inventory) args[0]; yield null; }
+            case "closeInventory" -> { closedMenus++; yield null; }
             case "getOpenInventory" -> view();
             case "hashCode" -> id.hashCode();
             case "equals" -> proxy == args[0];
@@ -227,12 +229,12 @@ public class ReleaseChecks extends JavaPlugin implements Listener {
         config.set("rules.reward-spawner-mobs", true); config.save(file);
         Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "jobs reload");
         killMob(huntingMob(true));
-        check(profile.xp("hunting") == before + 5 && profile.earnings.total("hunting", System.currentTimeMillis()).subtract(money).compareTo(new BigDecimal("0.40")) == 0,
+        check(profile.xp("hunting") == before + 5 && profile.earnings.total("hunting", System.currentTimeMillis()).subtract(money).compareTo(new BigDecimal("0.1667")) == 0,
                 "reload can enable spawner XP and money without migration resetting the choice");
         config.set("rules.reward-spawner-mobs", false); config.save(file);
         Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "jobs reload");
         killMob(huntingMob(true));
-        check(profile.xp("hunting") == before + 5 && profile.earnings.total("hunting", System.currentTimeMillis()).subtract(money).compareTo(new BigDecimal("0.40")) == 0,
+        check(profile.xp("hunting") == before + 5 && profile.earnings.total("hunting", System.currentTimeMillis()).subtract(money).compareTo(new BigDecimal("0.1667")) == 0,
                 "reload can disable spawner XP and money immediately");
     }
     void eventChecks() throws Exception {
@@ -263,7 +265,7 @@ public class ReleaseChecks extends JavaPlugin implements Listener {
         check(profile.xp("hunting") == 0 && profile.earnings.total("hunting", System.currentTimeMillis()).signum() == 0,
                 "spawner kills give neither XP nor money by default");
         killMob(huntingMob(false));
-        check(profile.xp("hunting") == 5 && profile.earnings.total("hunting", System.currentTimeMillis()).compareTo(new BigDecimal("0.40")) == 0,
+        check(profile.xp("hunting") == 5 && profile.earnings.total("hunting", System.currentTimeMillis()).compareTo(new BigDecimal("0.1667")) == 0,
                 "natural hostile mobs still earn Hunting XP and money");
         for (var reason : List.of(CreatureSpawnEvent.SpawnReason.SPAWNER, CreatureSpawnEvent.SpawnReason.TRIAL_SPAWNER)) {
             var spawned = huntingMob(false);
@@ -274,7 +276,7 @@ public class ReleaseChecks extends JavaPlugin implements Listener {
             var transformed = huntingMob(false);
             Bukkit.getPluginManager().callEvent(new EntityTransformEvent(restored, List.of(transformed), EntityTransformEvent.TransformReason.DROWNED));
             killMob(transformed);
-            check(profile.xp("hunting") == 5 && profile.earnings.total("hunting", System.currentTimeMillis()).compareTo(new BigDecimal("0.40")) == 0,
+            check(profile.xp("hunting") == 5 && profile.earnings.total("hunting", System.currentTimeMillis()).compareTo(new BigDecimal("0.1667")) == 0,
                     reason + " provenance survives saved entity data and transformations");
         }
         current = Bukkit.createInventory(null, 9);
@@ -473,9 +475,12 @@ public class ReleaseChecks extends JavaPlugin implements Listener {
         jobs.toggleBossBar(player);
         check(!profile.bossBar, "player can turn the boss bar off");
         var menus = new JobsMenu(jobs); menus.open(player, false, 0, null);
-        check(current.getSize() == 45 && current.getItem(38).getType() == Material.LEVER && current.getItem(39).getType() == Material.PAPER
-                        && current.getItem(40).getType() == Material.GOLD_NUGGET && current.getItem(41).getType() == Material.CLOCK && current.getItem(42).getType() == Material.BOOK,
-                "menu feedback and navigation controls are centered");
+        check(current.getSize() == 45 && current.getItem(36).getType() == Material.COMPARATOR
+                        && current.getItem(39).getType() == Material.CLOCK && current.getItem(41).getType() == Material.BOOK,
+                "settings are bottom left while paycheck and navigation stay centered");
+        check(java.util.stream.IntStream.range(0, current.getSize()).noneMatch(slot -> current.getItem(slot) != null
+                        && current.getItem(slot).getItemMeta().displayName().toString().matches(".*(Boss bar:|Level-up chat:|Payday chat:).*")),
+                "the jobs page has no leftover feedback toggles");
         check(((JobsMenu.Page) current.getHolder()).getInventory() == current && current.getItem(4).getType() == Material.BOOK && current.getItem(44).getType() == Material.OAK_DOOR,
                 "info is top center and close is bottom right");
         check(java.util.stream.IntStream.of(19, 20, 21, 22, 23, 24, 25, 12, 13, 14, 30, 31, 32).allMatch(s -> current.getItem(s) != null && current.getItem(s).getItemMeta().lore().size() >= 6)
@@ -514,8 +519,42 @@ public class ReleaseChecks extends JavaPlugin implements Listener {
         var creative = new InventoryCreativeEvent(view(), InventoryType.SlotType.CONTAINER, 0, new ItemStack(Material.DIAMOND));
         Bukkit.getPluginManager().callEvent(creative);
         check(creative.isCancelled(), "creative inventory actions cannot alter menu items");
-        var toggle = new InventoryClickEvent(view(), InventoryType.SlotType.CONTAINER, 38, ClickType.LEFT, InventoryAction.PICKUP_ALL);
-        menus.click(toggle);
+        menus.click(new InventoryClickEvent(view(), InventoryType.SlotType.CONTAINER, 36, ClickType.LEFT, InventoryAction.PICKUP_ALL));
+        later(2, () -> {
+            check(current.getSize() == 27 && current.getItem(11).getType() == Material.LEVER
+                            && current.getItem(13).getType() == Material.PAPER && current.getItem(15).getType() == Material.GOLD_NUGGET,
+                    "settings group all three personal feedback preferences in a compact menu");
+            check(current.getItem(22).getType() == Material.ARROW && current.getItem(26).getType() == Material.OAK_DOOR,
+                    "settings offer a back button and a bottom-right close button");
+            var settingsDrag = new InventoryDragEvent(view(), new ItemStack(Material.DIRT), new ItemStack(Material.DIRT), false, Map.of(11, new ItemStack(Material.DIRT)));
+            menus.drag(settingsDrag); check(settingsDrag.isCancelled(), "settings items cannot be dragged out");
+            menus.click(new InventoryClickEvent(view(), InventoryType.SlotType.CONTAINER, 11, ClickType.LEFT, InventoryAction.PICKUP_ALL));
+            later(2, () -> {
+                check(profile.bossBar && current.getSize() == 27 && current.getItem(11).getItemMeta().displayName().toString().contains("On"),
+                        "toggling the boss bar updates its state without leaving settings");
+                menus.click(new InventoryClickEvent(view(), InventoryType.SlotType.CONTAINER, 22, ClickType.LEFT, InventoryAction.PICKUP_ALL));
+                later(2, () -> {
+                    check(current.getSize() == 45 && current.getItem(39).getType() == Material.CLOCK,
+                            "settings return to the jobs page with the paycheck entry intact");
+                    settingsCloseChecks(menus);
+                });
+            });
+        });
+    }
+    void settingsCloseChecks(JobsMenu menus) {
+        menus.click(new InventoryClickEvent(view(), InventoryType.SlotType.CONTAINER, 36, ClickType.LEFT, InventoryAction.PICKUP_ALL));
+        later(2, () -> {
+            int before = closedMenus;
+            menus.click(new InventoryClickEvent(view(), InventoryType.SlotType.CONTAINER, 26, ClickType.LEFT, InventoryAction.PICKUP_ALL));
+            later(2, () -> {
+                check(closedMenus == before + 1, "the compact settings menu closes from its own bottom-right slot");
+                boolean notifications = profile.notifications;
+                menus.click(new InventoryClickEvent(view(), InventoryType.SlotType.CONTAINER, 13, ClickType.LEFT, InventoryAction.PICKUP_ALL));
+                menus.open(player, false, 0, null);
+                later(2, () -> check(profile.notifications == notifications && current.getSize() == 45,
+                        "a queued settings click cannot change preferences after the player leaves that page"));
+            });
+        });
     }
     void travelChecks() throws Exception {
         check(jobs.registry().get("exploring").distancePerReward() == 500 && jobs.registry().get("sailing").distancePerReward() == 500,
@@ -680,7 +719,7 @@ public class ReleaseChecks extends JavaPlugin implements Listener {
                         && Math.abs(jobs.profile(p).travel.distance("exploring") - (traveled - paidDistance)) < 1e-6),
                 "movement events buffer distance without repeatedly applying travel XP");
         var expected = new BigDecimal("0.0075").multiply(BigDecimal.valueOf(loadTicks)).min(new BigDecimal("100"))
-                .add(new BigDecimal("0.40").multiply(BigDecimal.valueOf(kills)).min(new BigDecimal("100")))
+                .add(new BigDecimal("0.1667").multiply(BigDecimal.valueOf(kills)).min(new BigDecimal("100")))
                 .add(new BigDecimal("0.001").multiply(BigDecimal.valueOf(paidDistance)).min(new BigDecimal("100")));
         check(loadPlayers.stream().allMatch(p -> balances.getOrDefault(p.getUniqueId(), BigDecimal.ZERO).add(jobs.profile(p).pending).compareTo(expected) == 0),
                 "all 100 simulated players receive exact payments under load");
@@ -706,7 +745,23 @@ public class ReleaseChecks extends JavaPlugin implements Listener {
             menus.click(next);
             later(2, () -> {
                 check(current.getItem(10).getItemMeta().displayName().toString().contains("#22 "), "leaderboard next page starts with rank 22 at the top left");
-                previewChecks(menus);
+                check(current.getItem(36).getType() == Material.COMPARATOR, "detailed leaderboards also offer settings at the bottom left");
+                menus.click(new InventoryClickEvent(view(), InventoryType.SlotType.CONTAINER, 36, ClickType.LEFT, InventoryAction.PICKUP_ALL));
+                later(2, () -> {
+                    check(current.getSize() == 27 && current.getItem(0).getType() == Material.PURPLE_STAINED_GLASS_PANE,
+                            "leaderboard settings keep the purple border");
+                    var refresh = JobsMenu.class.getDeclaredMethod("refresh", Player.class, JobsMenu.Page.class);
+                    refresh.setAccessible(true); refresh.invoke(menus, player, current.getHolder());
+                    later(2, () -> {
+                        check(current.getSize() == 27, "ranking refreshes do not replace an open settings menu");
+                        menus.click(new InventoryClickEvent(view(), InventoryType.SlotType.CONTAINER, 22, ClickType.LEFT, InventoryAction.PICKUP_ALL));
+                        later(2, () -> {
+                            check(current.getItem(10).getItemMeta().displayName().toString().contains("#22 "),
+                                    "Back restores the selected job and leaderboard page");
+                            previewChecks(menus);
+                        });
+                    });
+                });
             });
         });
     }
@@ -718,15 +773,26 @@ public class ReleaseChecks extends JavaPlugin implements Listener {
                 check(lore.stream().anyMatch(line -> line instanceof net.kyori.adventure.text.TextComponent text && text.content().startsWith("#1 ")),
                         "leaderboard selector shows top players in job lore");
                 check(lore.stream().noneMatch(line -> line.toString().contains("Earned this hour")), "leaderboard preview omits personal job statistics");
+                check(current.getItem(36).getType() == Material.COMPARATOR
+                                && java.util.stream.IntStream.range(0, current.getSize()).noneMatch(slot -> current.getItem(slot) != null
+                                && current.getItem(slot).getItemMeta().displayName().toString().matches(".*(Boss bar:|Level-up chat:|Payday chat:).*")),
+                        "the leaderboards page has one settings entry and no leftover toggles");
                 jobs.settings().set("feedback.leaderboard-preview-size", 3); menus.open(player, true, 0, null);
                 check(current.getItem(19).getItemMeta().lore().stream().filter(line -> line instanceof net.kyori.adventure.text.TextComponent text
                         && text.content().startsWith("#")).count() == 3, "leaderboard preview size is configurable");
                 jobs.settings().set("feedback.leaderboard-preview-size", 5);
-                var chat = new InventoryClickEvent(view(), InventoryType.SlotType.CONTAINER, 39, ClickType.LEFT, InventoryAction.PICKUP_ALL);
-                menus.click(chat);
+                menus.click(new InventoryClickEvent(view(), InventoryType.SlotType.CONTAINER, 36, ClickType.LEFT, InventoryAction.PICKUP_ALL));
                 later(2, () -> {
-                    check(!profile.notifications, "chat toggle works from the inventory");
-                    pistonChecks();
+                    menus.click(new InventoryClickEvent(view(), InventoryType.SlotType.CONTAINER, 13, ClickType.LEFT, InventoryAction.PICKUP_ALL));
+                    later(2, () -> {
+                        check(!profile.notifications && current.getSize() == 27, "level-up chat toggles from settings without leaving the menu");
+                        menus.click(new InventoryClickEvent(view(), InventoryType.SlotType.CONTAINER, 22, ClickType.LEFT, InventoryAction.PICKUP_ALL));
+                        later(2, () -> {
+                            check(current.getSize() == 45 && current.getItem(4).getType() == Material.GOLDEN_HELMET,
+                                    "Back returns to the main leaderboards page");
+                            pistonChecks();
+                        });
+                    });
                 });
             });
     }

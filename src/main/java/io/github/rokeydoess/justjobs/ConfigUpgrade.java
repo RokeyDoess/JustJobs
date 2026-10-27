@@ -20,8 +20,8 @@ final class ConfigUpgrade {
         yaml.set("config-version", 2);
     }
     static boolean jobs(YamlConfiguration yaml) {
-        long version = ConfigValues.integer(yaml, "config-version", 0, 0, 8);
-        if (version == 8) return false;
+        long version = ConfigValues.integer(yaml, "config-version", 0, 0, 9);
+        if (version == 9) return false;
         if (version < 2) upgradeOriginalJobs(yaml, version);
         var jobs = yaml.getConfigurationSection("jobs");
         if (jobs != null && !jobs.getKeys(false).isEmpty()) {
@@ -49,19 +49,30 @@ final class ConfigUpgrade {
             if (version < 5) upgradePlacementJobs(yaml, defaults);
             retuneDefaults(yaml, defaults, version);
         }
-        yaml.set("config-version", 8);
+        yaml.set("config-version", 9);
         return true;
     }
     private static void retuneDefaults(YamlConfiguration yaml, YamlConfiguration defaults, long version) {
-        for (String id : java.util.List.of("digging", "digger", "dueling", "gladiator", "fishing")) {
-            String canonical = id.equals("digger") ? "digging" : id.equals("gladiator") ? "dueling" : id;
-            if (version >= 6 && canonical.equals("digging") || version >= 7 && canonical.equals("fishing")) continue;
+        for (String id : java.util.List.of("digging", "digger", "dueling", "gladiator", "fishing", "hunting", "hunter")) {
+            String canonical = switch (id) {
+                case "digger" -> "digging";
+                case "gladiator" -> "dueling";
+                case "hunter" -> "hunting";
+                default -> id;
+            };
+            if (version >= switch (canonical) {
+                case "digging" -> 6;
+                case "fishing" -> 7;
+                case "dueling" -> 8;
+                default -> 9;
+            }) continue;
             var job = yaml.getConfigurationSection("jobs." + id);
             if (job == null || !job.isList("rules") || job.getList("rules").size() != job.getMapList("rules").size()) continue;
             var expected = defaults.getMapList("jobs." + canonical + ".rules").getFirst();
             var previous = new java.math.BigDecimal(switch (canonical) {
                 case "digging" -> "0.0075";
                 case "dueling" -> version < 6 ? "12.50" : "10";
+                case "hunting" -> "0.40";
                 default -> "0.75";
             });
             var rules = new java.util.ArrayList<Map<String, Object>>();

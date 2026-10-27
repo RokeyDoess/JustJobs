@@ -175,6 +175,9 @@ public final class JustJobsPlugin extends JavaPlugin {
     public BigDecimal hourlyLimit(JobRegistry.Job job) {
         return job.hourlyLimit() == null ? new BigDecimal(settings.getString("economy.hourly-income-limit-per-job", "100")) : job.hourlyLimit();
     }
+    public BigDecimal capEarnings(PlayerProfile profile, String job, long now) {
+        return paydayEnabled() ? profile.paycheck.earned(job, now) : profile.earnings.total(job, now);
+    }
     public boolean eligible(Player player) {
         return !storageFailed && player.hasPermission("justjobs.earn") && !player.isDead()
                 && (player.getGameMode() == GameMode.SURVIVAL || player.getGameMode() == GameMode.ADVENTURE)
@@ -208,9 +211,12 @@ public final class JustJobsPlugin extends JavaPlugin {
             double after = before + xp;
             if (!Double.isFinite(after)) continue;
             profile.xp.put(job.id(), after);
-            BigDecimal credited = profile.earnings.credit(job.id(), money, hourlyLimit(job), now);
+            boolean payday = paydayEnabled();
+            BigDecimal allowed = payday ? money : profile.earnings.credit(job.id(), money, hourlyLimit(job), now);
+            BigDecimal credited = profile.paycheck.earn(job.id(), allowed, hourlyLimit(job), now, paydayInterval(), payday);
+            // Keep rolling history so switching to immediate payouts doesn't grant a fresh hourly allowance.
+            if (payday) profile.earnings.credit(job.id(), credited, BigDecimal.ZERO, now);
             profile.pending = profile.pending.add(credited);
-            profile.paycheck.earn(job.id(), credited, now, paydayInterval(), paydayEnabled());
             if (diagnostics != null) diagnostics.award(profile, job.id(), xp, money, credited);
             dirty.add(profile.id);
             if (credited.signum() > 0) { payoutQueue.add(profile.id); unpaid.add(profile.id); }
@@ -221,9 +227,10 @@ public final class JustJobsPlugin extends JavaPlugin {
                 var display = bars.get(player.getUniqueId());
                 if (display != null && !display.job().equals(job.id()) && now - display.shown() < 2000) continue;
                 var bar = display == null ? BossBar.bossBar(Component.empty(), 0, job.color(), BossBar.Overlay.PROGRESS) : display.bar();
-                boolean capped = hourlyLimit(job).signum() > 0 && profile.earnings.total(job.id(), now).compareTo(hourlyLimit(job)) >= 0;
+                boolean capped = hourlyLimit(job).signum() > 0 && capEarnings(profile, job.id(), now).compareTo(hourlyLimit(job)) >= 0;
+                String capMessage = payday ? "Paycheck money limit reached" : "Hourly money limit reached";
                 bar.name(Component.text(job.name() + " • Level " + progress.level() + " • " + format(progress.xp()) + " / " + format(progress.required()) + " XP"
-                        + (capped ? " • Hourly money limit reached" : "")));
+                        + (capped ? " • " + capMessage : "")));
                 bar.progress((float) progress.fraction()); bar.color(job.color());
                 if (display == null) player.showBossBar(bar);
                 long shown = display == null || !display.job().equals(job.id()) ? now : display.shown();
@@ -392,9 +399,9 @@ public final class JustJobsPlugin extends JavaPlugin {
                 String name = args.length > 1 ? args[1] : sender.getName();
                 var profile = players.values().stream().filter(p -> p.name.equalsIgnoreCase(name)).findFirst().orElse(null);
                 if (profile == null) { sender.sendMessage("No saved job progress for " + name + ". Usage: /jobs earnings <player>"); return true; }
-                sender.sendMessage(profile.name + " — earnings in the rolling hour:");
+                sender.sendMessage(profile.name + (paydayEnabled() ? " — earnings this pay period:" : " — earnings in the rolling hour:"));
                 long now = System.currentTimeMillis();
-                for (var job : registry.jobs()) sender.sendMessage(job.name() + ": " + currency(profile.earnings.total(job.id(), now))
+                for (var job : registry.jobs()) sender.sendMessage(job.name() + ": " + currency(capEarnings(profile, job.id(), now))
                         + " / " + (hourlyLimit(job).signum() == 0 ? "unlimited" : currency(hourlyLimit(job))));
                 sender.sendMessage("Unpaid earnings: " + currency(profile.pending));
             }

@@ -17,7 +17,7 @@ import java.util.concurrent.ExecutorService;
 
 /** Real scheduler and Vault checks with simulated clock boundaries, including offline accounts. */
 public final class PaydayChecks extends ReleaseChecks {
-    static final UUID OFFLINE = new UUID(8, 1), PARTIAL = new UUID(8, 2);
+    static final UUID OFFLINE = new UUID(8, 1), PARTIAL = new UUID(8, 2), CAPPED = new UUID(8, 3);
     boolean allowPartialRemainder;
     PlayerProfile partial;
     @Override void start() throws Exception {
@@ -47,6 +47,14 @@ public final class PaydayChecks extends ReleaseChecks {
         jobs.award(player(OFFLINE, "OfflineWallet"), JobRegistry.Activity.PLAYER_KILL, null, null, 2);
         jobs.award(player(PARTIAL, "PartialWallet"), JobRegistry.Activity.PLAYER_KILL, null, null, 1);
         partial = jobs.players().get(PARTIAL);
+        jobs.award(player(CAPPED, "PeriodCap"), JobRegistry.Activity.PLAYER_KILL, null, null, 30);
+        var capped = jobs.players().get(CAPPED);
+        check(capped.pending.compareTo(new BigDecimal("100")) == 0 && capped.xp("dueling") == 300,
+                "payday mode caps money without stopping job XP");
+        reload();
+        jobs.award(player(CAPPED, "PeriodCap"), JobRegistry.Activity.PLAYER_KILL, null, null, 1);
+        check(capped.pending.compareTo(new BigDecimal("100")) == 0 && capped.xp("dueling") == 310,
+                "reload cannot reset the current paycheck's cap");
         later(30, this::beforePayday);
     }
     void reload() { jobs.onCommand(Bukkit.getConsoleSender(), jobs.getCommand("jobs"), "jobs", new String[]{"reload"}); }
@@ -54,19 +62,35 @@ public final class PaydayChecks extends ReleaseChecks {
     void beforePayday() throws Exception {
         check(balances.isEmpty() && profile.pending.compareTo(new BigDecimal("6.25")) == 0, "whole earnings wait for payday instead of paying immediately");
         var menus = new JobsMenu(jobs); menus.open(player, false, 0, null);
-        check(current.getItem(41).getType() == Material.CLOCK && current.getItem(41).getItemMeta().lore().stream().anyMatch(c -> c.toString().contains("6.25")),
+        check(current.getItem(39).getType() == Material.CLOCK && current.getItem(39).getItemMeta().lore().stream().anyMatch(c -> c.toString().contains("6.25")),
                 "Next paycheck shows the distribution time and earned amount");
-        menus.click(new InventoryClickEvent(view(), InventoryType.SlotType.CONTAINER, 40, ClickType.LEFT, InventoryAction.PICKUP_ALL));
+        check(current.getItem(23).getItemMeta().lore().stream().anyMatch(c -> plain(c).equals("Earned this pay period: $5.00 / $100.00")),
+                "the jobs menu describes the active paycheck cap period");
+        menus.click(new InventoryClickEvent(view(), InventoryType.SlotType.CONTAINER, 36, ClickType.LEFT, InventoryAction.PICKUP_ALL));
         later(2, () -> {
-            check(!profile.paydayChat, "payday chat toggles from its centered inventory button");
-            jobs.togglePaydayChat(player); check(profile.paydayChat, "payday chat can be enabled again");
-            for (var p : List.of(profile, jobs.players().get(OFFLINE), partial)) p.paycheck.restoreNext(System.currentTimeMillis() - 1);
-            jobs.award(player, JobRegistry.Activity.PLAYER_KILL, null, null, 1);
-            jobs.award(player(PARTIAL, "PartialWallet"), JobRegistry.Activity.PLAYER_KILL, null, null, 1);
-            queue(); later(45, this::afterPayday);
+            check(current.getSize() == 27, "the jobs page opens the separate settings menu");
+            menus.click(new InventoryClickEvent(view(), InventoryType.SlotType.CONTAINER, 15, ClickType.LEFT, InventoryAction.PICKUP_ALL));
+            later(2, () -> {
+                check(!profile.paydayChat && current.getSize() == 27, "payday chat toggles from settings without leaving the menu");
+                jobs.togglePaydayChat(player); check(profile.paydayChat, "payday chat can be enabled again");
+                for (var p : List.of(profile, jobs.players().get(OFFLINE), partial)) p.paycheck.restoreNext(System.currentTimeMillis() - 1);
+                var capped = jobs.players().get(CAPPED);
+                capped.paycheck.restoreNext(System.currentTimeMillis() - 1);
+                check(jobs.capEarnings(capped, "dueling", System.currentTimeMillis()).signum() == 0,
+                        "the displayed cap resets at the scheduled cutoff before new activity");
+                jobs.award(player(CAPPED, "PeriodCap"), JobRegistry.Activity.PLAYER_KILL, null, null, 30);
+                check(capped.pending.compareTo(new BigDecimal("200")) == 0
+                                && jobs.capEarnings(capped, "dueling", System.currentTimeMillis()).compareTo(new BigDecimal("100")) == 0,
+                        "a new paycheck grants a full allowance despite the previous rolling-hour history");
+                jobs.award(player, JobRegistry.Activity.PLAYER_KILL, null, null, 1);
+                jobs.award(player(PARTIAL, "PartialWallet"), JobRegistry.Activity.PLAYER_KILL, null, null, 1);
+                queue(); later(45, this::afterPayday);
+            });
         });
     }
     void afterPayday() throws Exception {
+        check(balances.get(CAPPED).compareTo(new BigDecimal("100")) == 0 && jobs.players().get(CAPPED).pending.compareTo(new BigDecimal("100")) == 0,
+                "the old capped paycheck pays while the new capped earnings wait for their own payday");
         check(balances.get(MAIN).compareTo(new BigDecimal("6")) == 0 && profile.pending.compareTo(new BigDecimal("5.25")) == 0,
                 "payday deposits whole money, keeps the fraction and holds the next period's earnings");
         check(profile.paycheck.available().compareTo(new BigDecimal("0.25")) == 0 && profile.paycheck.snapshot().current().get("dueling").compareTo(new BigDecimal("5")) == 0,
@@ -106,6 +130,11 @@ public final class PaydayChecks extends ReleaseChecks {
         getLogger().info("RELEASE CHECKS PHASE 1 PASS: " + checks + " payday checks"); Bukkit.shutdown();
     }
     void afterRestart() throws Exception {
+        var capped = jobs.players().get(CAPPED);
+        jobs.award(player(CAPPED, "PeriodCap"), JobRegistry.Activity.PLAYER_KILL, null, null, 1);
+        check(jobs.capEarnings(capped, "dueling", System.currentTimeMillis()).compareTo(new BigDecimal("100")) == 0
+                        && capped.pending.compareTo(new BigDecimal("100")) == 0,
+                "the paycheck cap survives restart and a custom two-hour schedule");
         check(!profile.paydayChat, "payday chat preference survives restart");
         check(balances.get(MAIN).compareTo(new BigDecimal("11")) == 0 && profile.pending.compareTo(new BigDecimal("0.25")) == 0,
                 "a payday missed during downtime is settled after startup with its fraction retained");

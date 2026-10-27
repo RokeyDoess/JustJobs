@@ -118,6 +118,23 @@ class DataStoreTest {
             assertTrue(rows.next()); assertEquals(99, rows.getInt(1));
         }
     }
+    @Test void paycheckCapSurvivesStorageEvenAfterTheRollingHourExpires() throws Exception {
+        var p = new PlayerProfile(UUID.randomUUID(), "PeriodCap");
+        long hour = 3_600_000, now = System.currentTimeMillis();
+        long start = now - Math.floorMod(now, 2 * hour);
+        var limit = new BigDecimal("100");
+        p.pending = p.paycheck.earn("hunting", limit, limit, start + 1, 2 * hour, true);
+        p.earnings.credit("hunting", limit, BigDecimal.ZERO, start + 1);
+        Path file = dir.resolve("period-cap.db");
+        try (var store = new DataStore(file)) { store.save(List.of(p.snapshot(start + hour + 120_000)), Map.of()); }
+        try (var store = new DataStore(file)) {
+            var loaded = store.load().get(p.id);
+            assertEquals(0, loaded.earnings.total("hunting", start + hour + 120_000).signum());
+            assertEquals(0, loaded.paycheck.earn("hunting", BigDecimal.ONE, limit, start + hour + 120_000, 2 * hour, true).signum());
+            assertEquals(limit, loaded.paycheck.earn("hunting", limit, limit, start + 2 * hour, 2 * hour, true));
+            assertEquals(limit, loaded.paycheck.available());
+        }
+    }
     @Test void paycheckPeriodsAndReservedBreakdownsSurviveRecovery() throws Exception {
         var p = new PlayerProfile(UUID.randomUUID(), "Paycheck");
         long now = System.currentTimeMillis();

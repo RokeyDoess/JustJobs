@@ -27,7 +27,7 @@ import java.util.Set;
 import java.util.UUID;
 
 public final class JobsMenu implements Listener {
-    private enum Action { BOSS_BAR, CHAT, PAYDAY_CHAT, PAYCHECK, HOME, ALL_RANKINGS, PREVIOUS, NEXT }
+    private enum Action { SETTINGS, BACK, BOSS_BAR, CHAT, PAYDAY_CHAT, PAYCHECK, HOME, ALL_RANKINGS, PREVIOUS, NEXT }
     private final JustJobsPlugin plugin;
     private final Map<String, Ranking> rankings = new HashMap<>();
     private final Set<String> loading = new HashSet<>();
@@ -37,12 +37,16 @@ public final class JobsMenu implements Listener {
     private record Ranking(List<Entry> entries, Map<UUID, Integer> positions, long expires) { }
     public static final class Page implements InventoryHolder {
         final boolean leaderboard;
+        final boolean settings;
         final int page;
         final String job;
         final Map<Integer, String> jobSlots = new HashMap<>();
         final Map<Integer, Action> controls = new HashMap<>();
         private Inventory inventory;
-        Page(boolean leaderboard, int page, String job) { this.leaderboard = leaderboard; this.page = page; this.job = job; }
+        Page(boolean leaderboard, int page, String job) { this(leaderboard, page, job, false); }
+        Page(boolean leaderboard, int page, String job, boolean settings) {
+            this.leaderboard = leaderboard; this.page = page; this.job = job; this.settings = settings;
+        }
         @Override public Inventory getInventory() { return inventory; }
     }
     public JobsMenu(JustJobsPlugin plugin) { this.plugin = plugin; }
@@ -71,6 +75,7 @@ public final class JobsMenu implements Listener {
         return cached;
     }
     private void refresh(Player player, Page page) {
+        if (page.settings) return;
         if (!refreshing.add(player.getUniqueId())) return;
         Bukkit.getScheduler().runTask(plugin, () -> {
             refreshing.remove(player.getUniqueId());
@@ -130,7 +135,6 @@ public final class JobsMenu implements Listener {
                 selected == null ? "No jobs enabled" : ranking == null ? "Loading rankings..." : "No progress recorded yet"));
         var controls = new ArrayList<Action>();
         if (page > 0) controls.add(Action.PREVIOUS);
-        controls.add(Action.BOSS_BAR); controls.add(Action.CHAT); controls.add(Action.PAYDAY_CHAT);
         if (!leaderboard) controls.add(Action.PAYCHECK);
         controls.add(Action.HOME);
         if (selected != null) controls.add(Action.ALL_RANKINGS);
@@ -140,19 +144,48 @@ public final class JobsMenu implements Listener {
             Action action = controls.get(i);
             int slot = controlSlots.get(i);
             holder.controls.put(slot, action);
-            inv.setItem(slot, switch (action) {
-                case PREVIOUS -> item(Material.ARROW, "Previous page");
-                case NEXT -> item(Material.ARROW, "Next page");
-                case BOSS_BAR -> item(Material.LEVER, "Boss bar: " + (profile.bossBar ? "On" : "Off"), "Click to toggle your progress bar.");
-                case CHAT -> item(Material.PAPER, "Level-up chat: " + (profile.notifications ? "On" : "Off"), "Click to toggle your level-up messages.");
-                case PAYDAY_CHAT -> item(Material.GOLD_NUGGET, "Payday chat: " + (profile.paydayChat ? "On" : "Off"), "Click to toggle your payday messages.");
-                case PAYCHECK -> paycheck(profile);
-                case HOME -> item(Material.BOOK, leaderboard ? "Back to your jobs" : "Leaderboards");
-                case ALL_RANKINGS -> item(Material.COMPASS, "All leaderboards");
-            });
+            inv.setItem(slot, control(action, profile, leaderboard));
         }
+        holder.controls.put(MenuLayout.SETTINGS, Action.SETTINGS);
+        inv.setItem(MenuLayout.SETTINGS, control(Action.SETTINGS, profile, leaderboard));
         inv.setItem(MenuLayout.CLOSE, item(Material.OAK_DOOR, "Close"));
         player.openInventory(inv);
+    }
+
+    private void openSettings(Player player, Page previous) {
+        var holder = new Page(previous.leaderboard, previous.page, previous.job, true);
+        holder.inventory = Bukkit.createInventory(holder, 27, Component.text("Your settings"));
+        var inv = holder.inventory;
+        var border = previous.leaderboard ? Material.PURPLE_STAINED_GLASS_PANE : Material.GRAY_STAINED_GLASS_PANE;
+        for (int slot = 0; slot < inv.getSize(); slot++)
+            if (slot < 9 || slot >= 18 || slot % 9 == 0 || slot % 9 == 8) inv.setItem(slot, item(border, " "));
+        inv.setItem(4, item(Material.COMPARATOR, "Your settings", "These preferences apply to you.", "Click an option to turn it on or off."));
+        var profile = plugin.profile(player);
+        var actions = List.of(Action.BOSS_BAR, Action.CHAT, Action.PAYDAY_CHAT);
+        for (int i = 0; i < actions.size(); i++) {
+            int slot = 11 + i * 2;
+            holder.controls.put(slot, actions.get(i));
+            inv.setItem(slot, control(actions.get(i), profile, previous.leaderboard));
+        }
+        holder.controls.put(22, Action.BACK);
+        inv.setItem(22, control(Action.BACK, profile, previous.leaderboard));
+        inv.setItem(inv.getSize() - 1, item(Material.OAK_DOOR, "Close"));
+        player.openInventory(inv);
+    }
+
+    private ItemStack control(Action action, PlayerProfile profile, boolean leaderboard) {
+        return switch (action) {
+            case SETTINGS -> item(Material.COMPARATOR, "Settings", "Change your boss bar and chat preferences.");
+            case BACK -> item(Material.ARROW, "Back", leaderboard ? "Return to your leaderboard page." : "Return to your jobs.");
+            case PREVIOUS -> item(Material.ARROW, "Previous page");
+            case NEXT -> item(Material.ARROW, "Next page");
+            case BOSS_BAR -> item(Material.LEVER, "Boss bar: " + (profile.bossBar ? "On" : "Off"), "Click to toggle your progress bar.");
+            case CHAT -> item(Material.PAPER, "Level-up chat: " + (profile.notifications ? "On" : "Off"), "Click to toggle your level-up messages.");
+            case PAYDAY_CHAT -> item(Material.GOLD_NUGGET, "Payday chat: " + (profile.paydayChat ? "On" : "Off"), "Click to toggle your payday messages.");
+            case PAYCHECK -> paycheck(profile);
+            case HOME -> item(Material.BOOK, leaderboard ? "Back to your jobs" : "Leaderboards");
+            case ALL_RANKINGS -> item(Material.COMPASS, "All leaderboards");
+        };
     }
 
     private ItemStack paycheck(PlayerProfile profile) {
@@ -190,7 +223,8 @@ public final class JobsMenu implements Listener {
         if (job.rules().stream().anyMatch(r -> r.activity() == JobRegistry.Activity.TRAVEL || r.activity() == JobRegistry.Activity.SAIL))
             lore.add("Next travel reward: " + Math.round(profile.travel.distance(job.id())) + " / " + Math.round(job.distancePerReward()) + " blocks");
         var limit = plugin.hourlyLimit(job);
-        if (limit.signum() > 0) lore.add("Earned this hour: " + plugin.currency(profile.earnings.total(job.id(), System.currentTimeMillis())) + " / " + plugin.currency(limit));
+        if (limit.signum() > 0) lore.add((plugin.paydayEnabled() ? "Earned this pay period: " : "Earned this hour: ")
+                + plugin.currency(plugin.capEarnings(profile, job.id(), System.currentTimeMillis())) + " / " + plugin.currency(limit));
         return lore;
     }
     private String reward(JobRegistry.Job job, JobRegistry.Rule rule) {
@@ -239,11 +273,13 @@ public final class JobsMenu implements Listener {
         if (slot < 0 || slot >= page.inventory.getSize()) return;
         Bukkit.getScheduler().runTask(plugin, () -> {
             if (!player.isOnline() || player.getOpenInventory().getTopInventory().getHolder() != page) return;
-            if (slot == MenuLayout.CLOSE) player.closeInventory();
+            if (slot == page.inventory.getSize() - 1) player.closeInventory();
             else if (page.controls.containsKey(slot)) switch (page.controls.get(slot)) {
-                case BOSS_BAR -> { plugin.toggleBossBar(player); open(player, page.leaderboard, page.page, page.job); }
-                case CHAT -> { plugin.toggleNotifications(player); open(player, page.leaderboard, page.page, page.job); }
-                case PAYDAY_CHAT -> { plugin.togglePaydayChat(player); open(player, page.leaderboard, page.page, page.job); }
+                case SETTINGS -> openSettings(player, page);
+                case BACK -> open(player, page.leaderboard, page.page, page.job);
+                case BOSS_BAR -> { plugin.toggleBossBar(player); openSettings(player, page); }
+                case CHAT -> { plugin.toggleNotifications(player); openSettings(player, page); }
+                case PAYDAY_CHAT -> { plugin.togglePaydayChat(player); openSettings(player, page); }
                 case PAYCHECK -> open(player, page.leaderboard, page.page, page.job);
                 case HOME -> open(player, !page.leaderboard, 0, null);
                 case ALL_RANKINGS -> open(player, true, 0, null);

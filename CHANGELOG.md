@@ -1,9 +1,12 @@
 # Changelog
 
-## Unreleased
+## 1.0.2 (2026-10-26)
 
+- Job money caps now reset at each scheduled payday when paychecks are enabled. Immediate payouts keep rolling-hour caps. Reloads and restarts retain the current allowance; XP remains uncapped.
+- Hunting now pays 0.1667 per hostile mob, down from 0.40, with the same XP. Existing default rewards upgrade automatically; custom rates are kept.
+- Moved the boss bar, level-up chat, and payday chat toggles into a separate Settings menu. Open it from the comparator at the bottom left of the jobs or leaderboards page; Back returns to the same page.
 - Updated the SQLite storage library, Vault API, logging API, and build tools.
-- Updated the test framework. Job settings, rewards, and player data formats are unchanged.
+- Updated the test framework.
 
 ## 1.0.1 (2026-10-25)
 

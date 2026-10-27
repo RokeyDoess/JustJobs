@@ -33,7 +33,7 @@ class ConfigUpgradeTest {
         yaml.set("jobs.sailor.rules", List.of(Map.of("activity", "sail", "money", "0.123")));
         yaml.set("jobs.sailor.distance-per-reward", 300);
         ConfigUpgrade.jobs(yaml);
-        assertEquals(8, yaml.getInt("config-version"));
+        assertEquals(9, yaml.getInt("config-version"));
         assertEquals("0.0075", yaml.getMapList("jobs.digger.rules").getFirst().get("money"));
         assertEquals(500, yaml.getInt("jobs.explorer.distance-per-reward"));
         assertEquals(300, yaml.getInt("jobs.sailor.distance-per-reward"));
@@ -178,7 +178,7 @@ class ConfigUpgradeTest {
         assertEquals(500, yaml.getInt("jobs.exploring.distance-per-reward"));
         assertEquals(500, yaml.getInt("jobs.sailing.distance-per-reward"));
         assertEquals("0.0075", yaml.getMapList("jobs.digging.rules").getFirst().get("money"));
-        assertEquals(8, yaml.getInt("config-version"));
+        assertEquals(9, yaml.getInt("config-version"));
         assertFalse(ConfigUpgrade.jobs(yaml));
     }
     @Test void fishingAndTravelUpgradeKeepsCustomRewardsSelectorsAndIntervals() {
@@ -215,6 +215,28 @@ class ConfigUpgradeTest {
         yaml.set("config-version", 1); yaml.set("rules.reward-spawner-mobs", "invalid");
         ConfigUpgrade.settings(yaml);
         assertEquals("invalid", yaml.get("rules.reward-spawner-mobs"));
+    }
+    @Test void huntingUpgradeKeepsCustomRulesAndOnlyRunsOnce() {
+        for (String id : List.of("hunting", "hunter")) {
+            var yaml = new YamlConfiguration(); yaml.set("config-version", 8);
+            yaml.set("jobs." + id + ".rules", List.of(Map.of("activity", "mob-kill", "entities", List.of("#hostile"), "money", "0.40", "xp", 7, "description", "Monster")));
+            assertTrue(ConfigUpgrade.jobs(yaml));
+            var rule = yaml.getMapList("jobs." + id + ".rules").getFirst();
+            assertEquals("0.1667", rule.get("money")); assertEquals(7, rule.get("xp")); assertEquals("Monster", rule.get("description"));
+            assertFalse(ConfigUpgrade.jobs(yaml));
+            yaml.set("config-version", 8);
+            yaml.set("jobs." + id + ".rules", List.of(Map.of("activity", "mob-kill", "entities", List.of("#hostile"), "money", "2", "xp", 5)));
+            ConfigUpgrade.jobs(yaml);
+            assertEquals("2", yaml.getMapList("jobs." + id + ".rules").getFirst().get("money"));
+            yaml.set("config-version", 8);
+            yaml.set("jobs." + id + ".rules", List.of(Map.of("activity", "mob-kill", "entities", List.of("ZOMBIE"), "money", "0.40", "xp", 5)));
+            ConfigUpgrade.jobs(yaml);
+            assertEquals("0.40", yaml.getMapList("jobs." + id + ".rules").getFirst().get("money"));
+        }
+        var yaml = new YamlConfiguration(); yaml.set("config-version", 8);
+        yaml.set("jobs.dueling.rules", List.of(Map.of("activity", "player-kill", "money", "10", "xp", 10)));
+        ConfigUpgrade.jobs(yaml);
+        assertEquals("10", yaml.getMapList("jobs.dueling.rules").getFirst().get("money"));
     }
     @Test void duelingUpgradePreservesXpAndDoesNotRepeatEarlierDefaultChanges() {
         var yaml = YamlConfiguration.loadConfiguration(new java.io.InputStreamReader(getClass().getResourceAsStream("/jobs.yml")));

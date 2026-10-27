@@ -21,8 +21,9 @@
 # Optional hourly-income-limit overrides the shared money cap; 0 means unlimited.
 # natural-only defaults to true for block jobs. False allows grown/generated blocks;
 # hand-placed blocks are still excluded.
-# Travel pays a smaller bonus. Each job is capped at 100 per hour by default.
-config-version: 8
+# Caps reset each payday, or use a rolling hour when paydays are disabled.
+# Travel pays a smaller bonus. Each job's default cap is 100 per period.
+config-version: 9
 jobs:
   digging:
     name: Digging
@@ -89,7 +90,7 @@ jobs:
         description: hostile mob killed
         entities: ['#hostile']
         xp: 5
-        money: '0.40'
+        money: '0.1667'
   dueling:
     name: Dueling
     icon: IRON_SWORD

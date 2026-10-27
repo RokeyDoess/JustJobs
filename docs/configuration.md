@@ -11,7 +11,7 @@ Change a rule's `xp` and `money` to tune its reward. Set a job's `enabled` to `f
 | Digging | 0.0085 per natural soil or sand block |
 | Mining | 0.0075 per natural stone block; ores pay 0.03, 0.10, or 0.50 |
 | Treefelling | 0.075 per eligible log |
-| Hunting | 0.40 per hostile mob killed |
+| Hunting | 0.1667 per hostile mob killed |
 | Dueling | 5 per player kill, with a 60-second cooldown between the same two players |
 | Trading | 0.10 per emerald spent with a villager |
 | Exploring | 0.001 per block walked, awarded every 500 blocks |
@@ -70,11 +70,13 @@ Harvests must be mature and credited to a player. Farming includes the crops and
 
 ## Money and limits
 
-Players can earn 100 currency per job in a rolling hour by default. XP continues after the cap; excess money is not banked for later. The allowance survives reloads and restarts. It returns in minute buckets, which can add up to a minute before older earnings expire.
+Players can earn 100 currency per job between paydays by default. Every job's allowance resets at the scheduled payday, including for offline players and when a deposit needs to retry. XP continues after the cap; excess money is not banked for later. The allowance survives reloads and restarts.
 
-Set `economy.hourly-income-limit-per-job` in `config.yml`, or add `hourly-income-limit` inside a job to override it. Use `0` for no limit.
+With paydays disabled, caps use a rolling hour instead. That allowance returns in minute buckets, which can add up to a minute before older earnings expire.
 
-Paydays run every real-time hour by default, on the hour, for all players together. Offline players are included where the economy provider supports their accounts. Earnings made after the cutoff wait for the following payday. The hourly earnings cap still applies when money is earned, independently of the paycheck schedule.
+Set `economy.hourly-income-limit-per-job` in `config.yml`, or add `hourly-income-limit` inside a job to override it. These existing key names still apply in payday mode. Use `0` for no limit. A custom payday interval changes the cap period too: a two-hour payday allows 100 per job over those two hours, not 100 each hour.
+
+Paydays run every real-time hour by default, on the hour, for all players together. Offline players are included where the economy provider supports their accounts. Earnings made after the cutoff use the new allowance and wait for the following payday.
 
 `economy.payday-interval-minutes` sets the period (1–1440 minutes). The default pays on the hour. Custom periods follow a shared UTC schedule; the menu displays server-local time. Set `economy.payday-enabled: false` for immediate payouts. Reload applies a changed period to the next future boundary and keeps everything owed. Paydays missed during downtime become payable after startup; settled paychecks aren't repeated.
 
@@ -82,7 +84,7 @@ Whole-number payouts pay 1 from a paycheck of 1.37 and keep 0.37 for later. Rema
 
 Rejected payments retry automatically without waiting for another payday. Missing economy support leaves earnings saved and produces a server log warning. Providers that require accounts have them created before payment. Partial credits keep the unpaid amount, and an unreadable account does not hold up other players. Payment messages describe only the money actually credited, after its confirmation is saved.
 
-Payday chat starts enabled and can be toggled in `/jobs` or with `/jobs payday`. Hover over “Payday!” to see the job breakdown for that deposit. Jobs that contributed nothing are omitted. Existing unpaid balances from older versions remain payable; their source is shown as “Previous earnings” because those versions did not save a per-job unpaid breakdown.
+Payday chat starts enabled and can be toggled in the Settings menu or with `/jobs payday`. Hover over “Payday!” to see the job breakdown for that deposit. Jobs that contributed nothing are omitted. Existing unpaid balances from older versions remain payable; their source is shown as “Previous earnings” because those versions did not save a per-job unpaid breakdown.
 
 Your economy must make deposits visible in its Vault balance immediately. Vault cannot share a transaction with JustJobs, so a crash between a deposit and its saved confirmation can cause a duplicate retry. Other wallet activity during an unreadable balance can also make that payment uncertain.
 
@@ -134,7 +136,7 @@ These are in `config.yml`. Times are in seconds unless marked otherwise.
 
 Set `development.verbose-logging: true` to write periodic summaries to the server log. `development.summary-interval-seconds` defaults to 300 and accepts 10–3600. Logging is off by default and reloadable. It adds no per-action log messages.
 
-Each summary includes per-job rewarded event counts, XP, credited earnings, money withheld by hourly caps, money paid, and payment rejection/partial-credit counts. It also lists the 20 highest-earning player/job combinations, including player names and UUIDs. Rates use the elapsed logging window, not measured active playtime; these are diagnostic estimates rather than promised hourly incomes. Summaries reset each window and on restart, with a final summary on normal shutdown. Job progress and paychecks are saved separately and aren't affected by this setting.
+Each summary includes per-job rewarded event counts, XP, credited earnings, money withheld by job caps, money paid, and payment rejection/partial-credit counts. It also lists the 20 highest-earning player/job combinations, including player names and UUIDs. Rates use the elapsed logging window, not measured active playtime; these are diagnostic estimates rather than promised hourly incomes. Summaries reset each window and on restart, with a final summary on normal shutdown. Job progress and paychecks are saved separately and aren't affected by this setting.
 
 ## Tracking and backups
 

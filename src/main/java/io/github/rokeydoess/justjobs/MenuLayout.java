@@ -4,7 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 final class MenuLayout {
-    static final int SIZE = 45, CAPACITY = 21, INFO = 4, CLOSE = 44;
+    static final int SIZE = 45, CAPACITY = 21, INFO = 4, SETTINGS = 36, CLOSE = 44;
     private MenuLayout() { }
     static List<Integer> entries(int count) {
         if (count < 0 || count > CAPACITY) throw new IllegalArgumentException("Menu holds at most 21 entries");
