@@ -127,6 +127,9 @@ public final class NaturalBlocks implements Listener {
     }
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void entityChange(EntityChangeBlockEvent e) {
+        // Brushing changes the dust animation several times before the block is excavated.
+        if (e.getEntity() instanceof org.bukkit.entity.Player && e.getBlock().getBlockData() instanceof org.bukkit.block.data.Brushable
+                && e.getTo() == e.getBlock().getType()) return;
         boolean placed = playerPlaced(e.getBlock()) || e.getEntity().getPersistentDataContainer().has(placedKey, PersistentDataType.BYTE);
         mark(e.getBlock());
         if (e.getTo().isAir()) {

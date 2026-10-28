@@ -17,7 +17,7 @@ import java.util.*;
 import java.util.concurrent.ExecutorService;
 
 /** Exercises Paper's real crafting menus without connecting clients. No server internals enter the plugin. */
-public final class CraftingChecks extends ReleaseChecks {
+public class CraftingChecks extends ReleaseChecks {
     int nextPlayer;
     record Table(Player player, Object handle, Object menu, CraftingInventory grid, InventoryView view) { }
 
@@ -97,10 +97,11 @@ public final class CraftingChecks extends ReleaseChecks {
             check(jobs.profile(excluded.player()).xp("building") == 0 && jobs.profile(excluded.player()).xp("engineering") == 0,
                     "converting " + input + " gives no crafting job reward");
         }
-        var allowed = jobs.registry().get("building").rules().stream().flatMap(rule -> rule.materials().stream()).collect(java.util.stream.Collectors.toSet());
+        var allowed = jobs.registry().get("building").rules().stream().filter(rule -> rule.activity() == JobRegistry.Activity.CRAFT)
+                .flatMap(rule -> rule.materials().stream()).collect(java.util.stream.Collectors.toSet());
         check(allowed.size() == 13 && Collections.disjoint(allowed, Set.of(Material.OAK_PLANKS, Material.COBBLESTONE, Material.STONE_SLAB,
                         Material.GLASS_PANE, Material.WHITE_WOOL, Material.IRON_BLOCK, Material.QUARTZ_BLOCK, Material.QUARTZ_PILLAR)),
-                "Building has thirteen explicit outputs and excludes cheap or reversible conversions");
+                "Building's crafting grid has thirteen explicit outputs and excludes cheap or reversible conversions");
         jobs.save(); worker.submit(() -> {}).get();
         Files.createDirectories(getDataFolder().toPath()); Files.writeString(getDataFolder().toPath().resolve("restart"), "ready");
         getLogger().info("RELEASE CHECKS PHASE 1 PASS: " + checks + " crafting checks"); Bukkit.shutdown();
@@ -149,7 +150,8 @@ public final class CraftingChecks extends ReleaseChecks {
     static boolean accepts(Class<?>[] types, Object[] args) {
         if (types.length != args.length) return false;
         for (int i = 0; i < types.length; i++) {
-            Class<?> type = types[i] == int.class ? Integer.class : types[i] == boolean.class ? Boolean.class : types[i];
+            Class<?> type = types[i] == int.class ? Integer.class : types[i] == boolean.class ? Boolean.class
+                    : types[i] == long.class ? Long.class : types[i] == double.class ? Double.class : types[i];
             if (args[i] != null && !type.isInstance(args[i])) return false;
         }
         return true;

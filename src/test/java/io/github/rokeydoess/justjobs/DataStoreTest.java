@@ -19,6 +19,8 @@ class DataStoreTest {
         player.notifications = false;
         player.bossBar = false;
         player.paydayChat = false;
+        player.timeFormat = 24;
+        player.biomes.addAll(java.util.Set.of("minecraft:plains", "minecraft:forest"));
         player.travel.add("exploring", 249.5, 250);
         long now = System.currentTimeMillis();
         player.earnings.credit("hunting", new BigDecimal("99.50"), new BigDecimal("100"), now);
@@ -32,6 +34,8 @@ class DataStoreTest {
             assertFalse(loaded.notifications);
             assertFalse(loaded.bossBar);
             assertFalse(loaded.paydayChat);
+            assertEquals(24, loaded.timeFormat);
+            assertEquals(player.biomes, loaded.biomes);
             assertEquals(250, loaded.travel.add("exploring", .5, 250));
             assertEquals(new BigDecimal("0.50"), loaded.earnings.credit("hunting", BigDecimal.TEN, new BigDecimal("100"), now));
             assertEquals(123L, store.loadPairs().get("pair"));
@@ -91,6 +95,7 @@ class DataStoreTest {
             var loaded = store.load().get(id);
             assertTrue(loaded.bossBar);
             assertFalse(loaded.notifications);
+            assertNull(loaded.timeFormat);
             assertEquals(new BigDecimal("12.37"), loaded.pending);
             store.save(List.of(loaded.snapshot()), Map.of());
         }
@@ -117,6 +122,46 @@ class DataStoreTest {
         try (var connection = java.sql.DriverManager.getConnection("jdbc:sqlite:" + file); var s = connection.createStatement(); var rows = s.executeQuery("PRAGMA user_version")) {
             assertTrue(rows.next()); assertEquals(99, rows.getInt(1));
         }
+    }
+    @Test void clockPreferencesKeepBothExplicitFormatsAndTheServerDefault() throws Exception {
+        var inherited = new PlayerProfile(UUID.randomUUID(), "DefaultClock");
+        var twelve = new PlayerProfile(UUID.randomUUID(), "MorningClock"); twelve.timeFormat = 12;
+        var twentyFour = new PlayerProfile(UUID.randomUUID(), "EveningClock"); twentyFour.timeFormat = 24;
+        Path file = dir.resolve("clocks.db");
+        try (var store = new DataStore(file)) {
+            store.save(List.of(inherited.snapshot(), twelve.snapshot(), twentyFour.snapshot()), Map.of());
+        }
+        try (var store = new DataStore(file)) {
+            var loaded = store.load();
+            assertNull(loaded.get(inherited.id).timeFormat);
+            assertEquals(12, loaded.get(twelve.id).timeFormat);
+            assertEquals(24, loaded.get(twentyFour.id).timeFormat);
+            twentyFour.timeFormat = 12;
+            store.save(List.of(twentyFour.snapshot()), Map.of());
+            assertEquals(12, store.load().get(twentyFour.id).timeFormat);
+        }
+    }
+    @Test void versionFourUpgradeKeepsEarningsAndLeavesClockChoiceUnset() throws Exception {
+        Path file = dir.resolve("version-four.db");
+        UUID id = UUID.randomUUID();
+        Class.forName("org.sqlite.JDBC");
+        try (var connection = java.sql.DriverManager.getConnection("jdbc:sqlite:" + file); var s = connection.createStatement()) {
+            s.execute("CREATE TABLE players (uuid TEXT PRIMARY KEY,name TEXT NOT NULL,notifications INTEGER NOT NULL,pending TEXT NOT NULL,boss_bar INTEGER NOT NULL,payday_chat INTEGER NOT NULL,payday_at INTEGER NOT NULL)");
+            s.execute("INSERT INTO players VALUES ('" + id + "','ExistingPlayer',0,'12.37',0,0,0)");
+            s.execute("CREATE TABLE progress (uuid TEXT NOT NULL REFERENCES players(uuid),job TEXT NOT NULL,xp REAL NOT NULL,PRIMARY KEY(uuid,job))");
+            s.execute("INSERT INTO progress VALUES ('" + id + "','mining',42.5)");
+            s.execute("PRAGMA user_version=4");
+        }
+        try (var store = new DataStore(file)) {
+            var loaded = store.load().get(id);
+            assertNull(loaded.timeFormat);
+            assertEquals(new BigDecimal("12.37"), loaded.pending);
+            assertEquals(42.5, loaded.xp("mining"));
+            assertFalse(loaded.notifications); assertFalse(loaded.bossBar); assertFalse(loaded.paydayChat);
+            loaded.timeFormat = 24;
+            store.save(List.of(loaded.snapshot()), Map.of());
+        }
+        try (var store = new DataStore(file)) { assertEquals(24, store.load().get(id).timeFormat); }
     }
     @Test void paycheckCapSurvivesStorageEvenAfterTheRollingHourExpires() throws Exception {
         var p = new PlayerProfile(UUID.randomUUID(), "PeriodCap");

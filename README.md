@@ -9,11 +9,11 @@ A jobs plugin that just does jobs.
 
 Dig a tunnel, chop some trees, catch a fish. JustJobs rewards everyday survival play with job XP, levels, and money. Every job tracks automatically, so players can get on with playing instead of choosing careers or managing job slots.
 
-`/jobs` shows progress, rewards, leaderboards, and the next paycheck in a simple inventory menu. A boss bar keeps progress visible while playing. The Settings button at the bottom left lets players toggle it, level-up messages, and payday messages.
+`/jobs` shows progress, rewards, leaderboards, and the next paycheck in a simple inventory menu. A boss bar keeps progress visible while playing. Settings lets players choose their boss bar, chat and clock preferences. Every 50 job levels, the server gets a milestone announcement.
 
 ## What you get
 
-Thirteen jobs: Digging, Mining, Treefelling, Hunting, Dueling, Trading, Exploring, Sailing, Enchanting, Farming, Fishing, Engineering, and Building.
+Seventeen jobs, from Mining and Farming to Cooking, Brewing, Archaeology, and Smithing. Make gear, harvest honey, cook a meal, or find a new biome—there's more than one way to earn.
 
 Paychecks arrive automatically every real-time hour, including for offline players. Hover over “Payday!” in chat to see what each job paid. Whole-number payouts carry small remainders forward, so no earnings go to waste. Immediate payouts are available too.
 

@@ -18,7 +18,13 @@ public final class Progression {
         thresholds = new double[plateauLevel];
         for (int i = 1; i < thresholds.length; i++) thresholds[i] = thresholds[i - 1] + required(i);
     }
-    public static Progression defaults() { return new Progression(25, 150, 2500, 10, 50, 1); }
+    public static Progression defaults() { return new Progression(10, 40, 200, 10, 50, 1); }
+    /** One announcement per reward, using the highest milestone crossed. */
+    public static int milestoneCrossed(int before, int after, int interval) {
+        if (interval <= 0 || after <= before) return 0;
+        int milestone = after - after % interval;
+        return milestone > before ? milestone : 0;
+    }
     public double first() { return first; }
     public double early() { return early; }
     public double plateau() { return plateau; }

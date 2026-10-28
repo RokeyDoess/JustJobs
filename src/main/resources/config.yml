@@ -1,5 +1,5 @@
 # Jobs themselves live in jobs.yml. /jobs reload applies every setting.
-config-version: 2
+config-version: 4
 economy:
   # Shown before money amounts in menus and messages. Use '' for no symbol.
   currency-symbol: '$'
@@ -9,7 +9,7 @@ economy:
   payday-interval-minutes: 60
   # Per player, per job: resets each payday, or uses a rolling hour if paydays are off.
   # The existing key name is kept for compatibility. 0 disables the cap; XP is never capped.
-  hourly-income-limit-per-job: '100'
+  hourly-income-limit-per-job: '25'
   # Released payments retry on this interval; the payday schedule holds new earnings.
   payout-interval-seconds: 10
   # Used for immediate payouts when payday-enabled is false.
@@ -19,16 +19,23 @@ feedback:
   payday-chat-default: true
   level-up-chat: true
   level-up-chat-default: true
+  # Minimum time between personal level messages. Rapid gains show the latest level per job; 0 disables spacing.
+  level-up-chat-interval-seconds: 10
+  # Broadcast job milestones to everyone. 50 announces levels 50, 100, 150, etc.; 0 disables it.
+  milestone-level-interval: 50
   leaderboard-preview-size: 5
   boss-bar: true
   boss-bar-seconds: 6
+display:
+  # Default clock format: 12 for AM/PM or 24. Players can choose their own in Settings.
+  time-format: 12
 storage:
   autosave-seconds: 30
 progression:
-  first-level-xp: 25
-  early-level-xp: 150
+  first-level-xp: 10
+  early-level-xp: 40
   early-level: 10
-  plateau-xp: 2500
+  plateau-xp: 200
   plateau-level: 50
 rules:
   excluded-worlds: []

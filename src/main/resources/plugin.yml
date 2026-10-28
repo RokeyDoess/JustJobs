@@ -1,5 +1,5 @@
 name: JustJobs
-version: '1.0.2'
+version: '1.1.0'
 main: io.github.rokeydoess.justjobs.JustJobsPlugin
 api-version: '26.3'
 description: Automatic survival jobs, levels, and economy rewards.

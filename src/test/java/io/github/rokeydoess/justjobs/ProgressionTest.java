@@ -6,6 +6,27 @@ import static org.junit.jupiter.api.Assertions.*;
 class ProgressionTest {
     private final Progression curve = new Progression(10, 100, 2500, 10, 50, 1);
 
+    @Test void milestonesOnlyAnnounceWhenCrossingTheConfiguredLevel() {
+        assertEquals(0, Progression.milestoneCrossed(1, 49, 50));
+        assertEquals(50, Progression.milestoneCrossed(49, 50, 50));
+        assertEquals(0, Progression.milestoneCrossed(50, 51, 50));
+        assertEquals(100, Progression.milestoneCrossed(99, 100, 50));
+        assertEquals(10, Progression.milestoneCrossed(9, 10, 10));
+        assertEquals(2, Progression.milestoneCrossed(1, 2, 1));
+    }
+    @Test void bulkLevelGainsUseOnlyTheHighestCrossedMilestone() {
+        assertEquals(100, Progression.milestoneCrossed(49, 125, 50));
+        assertEquals(150, Progression.milestoneCrossed(49, 150, 50));
+        assertEquals(0, Progression.milestoneCrossed(100, 125, 50));
+        assertEquals(2_147_483_600, Progression.milestoneCrossed(100, Integer.MAX_VALUE, 50));
+        assertEquals(Integer.MAX_VALUE, Progression.milestoneCrossed(1, Integer.MAX_VALUE, Integer.MAX_VALUE));
+    }
+    @Test void disabledAndUnchangedLevelsNeverAnnounce() {
+        assertEquals(0, Progression.milestoneCrossed(49, 50, 0));
+        assertEquals(0, Progression.milestoneCrossed(50, 50, 50));
+        assertEquals(0, Progression.milestoneCrossed(100, 50, 50));
+    }
+
     @Test void levelsAtExactThresholdsAndCarriesExcess() {
         assertEquals(1, curve.progress(9).level());
         assertEquals(2, curve.progress(10).level());

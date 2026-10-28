@@ -11,11 +11,12 @@ class MenuLayoutTest {
         assertEquals(List.of(39, 40, 41), MenuLayout.controls(3));
     }
     @Test void everyPageSizeStaysInsideTheReservedAreaAndCentered() {
-        for (int count = 0; count <= 21; count++) {
+        for (int count = 0; count <= 27; count++) {
             var slots = MenuLayout.entries(count);
             assertEquals(count, new HashSet<>(slots).size());
-            assertTrue(slots.stream().allMatch(s -> s / 9 >= 1 && s / 9 <= 3 && s % 9 >= 1 && s % 9 <= 7));
-            for (int slot : slots) assertTrue(slots.contains(slot / 9 * 9 + 8 - slot % 9));
+            assertTrue(slots.stream().allMatch(s -> s >= 9 && s <= 35));
+            if (count <= 21) for (int slot : slots) assertTrue(slots.contains(slot / 9 * 9 + 8 - slot % 9));
+            else assertEquals(MenuLayout.entries(21), slots.subList(0, 21));
         }
         for (int count = 0; count <= 7; count++) {
             var slots = MenuLayout.controls(count);
@@ -25,6 +26,11 @@ class MenuLayoutTest {
                 assertTrue(slots.contains(80 - slot));
             }
         }
-        assertThrows(IllegalArgumentException.class, () -> MenuLayout.entries(22));
+        assertThrows(IllegalArgumentException.class, () -> MenuLayout.entries(28));
+    }
+    @Test void overflowUsesSideSlotsAndRanksReadAcrossAllNineColumns() {
+        assertEquals(List.of(18, 26, 9, 17, 27, 35), MenuLayout.entries(27).subList(21, 27));
+        assertEquals(java.util.stream.IntStream.rangeClosed(9, 35).boxed().toList(), MenuLayout.ranks(27));
+        assertEquals(List.of(9, 10, 11), MenuLayout.ranks(3));
     }
 }

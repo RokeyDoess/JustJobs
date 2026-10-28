@@ -5,9 +5,9 @@ import org.bukkit.configuration.file.YamlConfiguration;
 
 final class ConfigUpgrade {
     private ConfigUpgrade() { }
-    static void settings(YamlConfiguration yaml) {
-        long version = ConfigValues.integer(yaml, "config-version", 0, 0, 2);
-        if (version == 2) return;
+    static boolean settings(YamlConfiguration yaml) {
+        long version = ConfigValues.integer(yaml, "config-version", 0, 0, 4);
+        if (version == 4) return false;
         if (version == 0) {
             yaml.set("progression.growth", null);
             if (!yaml.contains("progression.first-level-xp") || yaml.get("progression.first-level-xp") instanceof Number number && number.doubleValue() == 10)
@@ -15,13 +15,27 @@ final class ConfigUpgrade {
             if (!yaml.contains("progression.early-level-xp"))
                 yaml.set("progression.early-level-xp", Math.max(yaml.getDouble("progression.first-level-xp", 25), Math.min(150, yaml.getDouble("progression.plateau-xp", 2500))));
         }
-        if (!yaml.contains("rules.reward-spawner-mobs") || Boolean.TRUE.equals(yaml.get("rules.reward-spawner-mobs")))
+        if (version < 2 && (!yaml.contains("rules.reward-spawner-mobs") || Boolean.TRUE.equals(yaml.get("rules.reward-spawner-mobs"))))
             yaml.set("rules.reward-spawner-mobs", false);
-        yaml.set("config-version", 2);
+        if (version < 3 && yaml.contains("economy.hourly-income-limit-per-job")
+                && ConfigValues.money(yaml, "economy.hourly-income-limit-per-job", null).compareTo(new java.math.BigDecimal("100")) == 0)
+            yaml.set("economy.hourly-income-limit-per-job", "25");
+        boolean retuned = matchesNumber(yaml, "progression.first-level-xp", 25)
+                && matchesNumber(yaml, "progression.early-level-xp", 150)
+                && matchesNumber(yaml, "progression.plateau-xp", 2500)
+                && matchesNumber(yaml, "progression.early-level", 10) && matchesNumber(yaml, "progression.plateau-level", 50);
+        if (retuned) {
+            yaml.set("progression.first-level-xp", 10); yaml.set("progression.early-level-xp", 40); yaml.set("progression.plateau-xp", 200);
+        }
+        yaml.set("config-version", 4);
+        return retuned;
     }
     static boolean jobs(YamlConfiguration yaml) {
-        long version = ConfigValues.integer(yaml, "config-version", 0, 0, 9);
-        if (version == 9) return false;
+        return jobs(yaml, Progression.defaults(), new Progression(25, 150, 2500, 10, 50, 1));
+    }
+    static boolean jobs(YamlConfiguration yaml, Progression shared, Progression former) {
+        long version = ConfigValues.integer(yaml, "config-version", 0, 0, 13);
+        if (version == 13) return false;
         if (version < 2) upgradeOriginalJobs(yaml, version);
         var jobs = yaml.getConfigurationSection("jobs");
         if (jobs != null && !jobs.getKeys(false).isEmpty()) {
@@ -48,9 +62,142 @@ final class ConfigUpgrade {
             }
             if (version < 5) upgradePlacementJobs(yaml, defaults);
             retuneDefaults(yaml, defaults, version);
+            if (version < 10) expandJobs(yaml, defaults);
+            if (version < 11) addProcessingJobs(yaml, defaults);
+            if (version < 12) addFeedbackAndPots(yaml, defaults);
+            retuneXp(yaml, defaults, shared, former);
         }
-        yaml.set("config-version", 9);
+        yaml.set("config-version", 13);
         return true;
+    }
+    private static void retuneXp(YamlConfiguration yaml, YamlConfiguration defaults, Progression shared, Progression former) {
+        var aliases = Map.of("digger", "digging", "miner", "mining", "lumberjack", "treefelling", "hunter", "hunting",
+                "gladiator", "dueling", "trader", "trading", "explorer", "exploring", "sailor", "sailing", "enchanter", "enchanting");
+        var jobs = yaml.getConfigurationSection("jobs");
+        boolean standard = shared.first() == 10 && shared.early() == 40 && shared.plateau() == 200
+                && shared.earlyLevel() == 10 && shared.plateauLevel() == 50;
+        for (String id : jobs.getKeys(false)) {
+            var job = jobs.getConfigurationSection(id);
+            if (job == null) continue;
+            String canonical = aliases.getOrDefault(id, id);
+            var preset = defaults.getConfigurationSection("jobs." + canonical);
+            boolean custom = job.contains("progression") && (!job.isConfigurationSection("progression")
+                    || job.getConfigurationSection("progression").getKeys(false).stream().anyMatch(key -> !key.equals("xp-multiplier")
+                    && !(canonical.equals("dueling") && key.equals("first-level-xp") && job.get("progression." + key) instanceof Number n && n.doubleValue() == 10)));
+            if (custom && former != null && job.isConfigurationSection("progression")) {
+                // Keep inherited parts of a customized curve when the shared defaults change.
+                double first = job.getDouble("progression.first-level-xp", former.first());
+                double plateau = job.getDouble("progression.plateau-xp", former.plateau());
+                if (!job.contains("progression.first-level-xp")) job.set("progression.first-level-xp", first);
+                if (!job.contains("progression.early-level-xp")) job.set("progression.early-level-xp", Math.min(plateau, Math.max(first, former.early())));
+                if (!job.contains("progression.plateau-xp")) job.set("progression.plateau-xp", plateau);
+                if (!job.contains("progression.early-level")) job.set("progression.early-level", former.earlyLevel());
+                if (!job.contains("progression.plateau-level")) job.set("progression.plateau-level", former.plateauLevel());
+            } else if (!custom && standard && preset != null && preset.isConfigurationSection("progression")) {
+                for (String key : preset.getConfigurationSection("progression").getKeys(false))
+                    if (!job.contains("progression." + key)) job.set("progression." + key, preset.get("progression." + key));
+            }
+            if (!job.isList("rules") || job.getList("rules").size() != job.getMapList("rules").size()) continue;
+            var rules = new java.util.ArrayList<Map<?, ?>>(job.getMapList("rules"));
+            for (int i = 0; i < rules.size(); i++) {
+                var raw = rules.get(i);
+                String activity = String.valueOf(raw.get("activity")).toLowerCase(java.util.Locale.ROOT).replace('_', '-');
+                String expected = canonical.equals("exploring") && activity.equals("travel") ? "0.01"
+                        : (canonical.equals("cooking") && activity.equals("cook") || canonical.equals("smithing") && activity.equals("smelt")) ? "0.5" : null;
+                if (expected == null || preset == null) continue;
+                for (var candidate : preset.getMapList("rules")) try {
+                    if (activity.equals(candidate.get("activity")) && java.util.Objects.equals(selectors(raw, "materials"), selectors(candidate, "materials"))
+                            && new java.math.BigDecimal(String.valueOf(raw.get("xp"))).compareTo(new java.math.BigDecimal(expected)) == 0) {
+                        var rule = new java.util.LinkedHashMap<String, Object>(); raw.forEach((key, value) -> rule.put(key.toString(), value));
+                        rule.put("xp", candidate.get("xp")); rules.set(i, rule); break;
+                    }
+                } catch (NumberFormatException ignored) { /* Normal validation reports invalid XP. */ }
+            }
+            job.set("rules", rules);
+        }
+    }
+    private static boolean matchesNumber(YamlConfiguration yaml, String path, double expected) {
+        return !yaml.contains(path) || yaml.get(path) instanceof Number n && n.doubleValue() == expected;
+    }
+    private static void addFeedbackAndPots(YamlConfiguration yaml, YamlConfiguration defaults) {
+        for (String id : java.util.List.of("cooking", "smithing")) {
+            var job = yaml.getConfigurationSection("jobs." + id);
+            if (job != null && !job.contains("boss-bar-cooldown-seconds"))
+                job.set("boss-bar-cooldown-seconds", defaults.get("jobs." + id + ".boss-bar-cooldown-seconds"));
+        }
+        var archaeology = yaml.getConfigurationSection("jobs.archaeology");
+        if (archaeology == null || !archaeology.isList("rules") || archaeology.getList("rules").size() != archaeology.getMapList("rules").size()) return;
+        if (archaeology.getMapList("rules").stream().noneMatch(rule -> "block-break".equalsIgnoreCase(String.valueOf(rule.get("activity")).replace('_', '-')))) {
+            var rules = new java.util.ArrayList<Map<?, ?>>(archaeology.getMapList("rules"));
+            rules.addAll(defaults.getMapList("jobs.archaeology.rules").stream().filter(rule -> "block-break".equals(rule.get("activity"))).toList());
+            archaeology.set("rules", rules);
+        }
+        if ("Brush buried finds out of suspicious sand and gravel.".equals(archaeology.getString("description")))
+            archaeology.set("description", defaults.getString("jobs.archaeology.description"));
+    }
+    private static void addProcessingJobs(YamlConfiguration yaml, YamlConfiguration defaults) {
+        var jobs = yaml.getConfigurationSection("jobs");
+        for (String id : java.util.List.of("cooking", "brewing"))
+            if (!jobs.contains(id)) jobs.createSection(id, defaults.getConfigurationSection("jobs." + id).getValues(false));
+        var smithing = jobs.getConfigurationSection("smithing");
+        if (smithing == null || !smithing.isList("rules") || smithing.getList("rules").size() != smithing.getMapList("rules").size()) return;
+        if (smithing.getMapList("rules").stream().noneMatch(rule -> "smelt".equals(rule.get("activity")))) {
+            var rules = new java.util.ArrayList<Map<?, ?>>(smithing.getMapList("rules"));
+            rules.addAll(defaults.getMapList("jobs.smithing.rules").stream().filter(rule -> "smelt".equals(rule.get("activity"))).toList());
+            smithing.set("rules", rules);
+        }
+        if ("Make, upgrade, trim and repair armor and weapons.".equals(smithing.getString("description")))
+            smithing.set("description", defaults.getString("jobs.smithing.description"));
+    }
+    private static void expandJobs(YamlConfiguration yaml, YamlConfiguration defaults) {
+        var formerRates = Map.of("mining", java.util.List.of("0.0075", "0.03", "0.10", "0.50"),
+                "hunting", java.util.List.of("0.1667"), "dueling", java.util.List.of("5"),
+                "exploring", java.util.List.of("0.001"), "enchanting", java.util.List.of("0.50"));
+        var aliases = Map.of("miner", "mining", "hunter", "hunting", "gladiator", "dueling", "explorer", "exploring", "enchanter", "enchanting");
+        var jobs = yaml.getConfigurationSection("jobs");
+        for (String id : jobs.getKeys(false)) {
+            String canonical = aliases.getOrDefault(id, id);
+            var job = jobs.getConfigurationSection(id);
+            if (job == null || !job.isList("rules") || job.getList("rules").size() != job.getMapList("rules").size()) continue;
+            var rules = new java.util.ArrayList<Map<String, Object>>();
+            var candidates = defaults.getMapList("jobs." + canonical + ".rules");
+            for (var raw : job.getMapList("rules")) {
+                var rule = new java.util.LinkedHashMap<String, Object>(); raw.forEach((key, value) -> rule.put(key.toString(), value));
+                var rates = formerRates.getOrDefault(canonical, java.util.List.of());
+                for (int i = 0; i < rates.size(); i++) {
+                    var candidate = candidates.get(i);
+                    try {
+                        if (java.util.Objects.equals(rule.get("activity"), candidate.get("activity"))
+                                && java.util.Objects.equals(selectors(rule, "materials"), selectors(candidate, "materials"))
+                                && java.util.Objects.equals(selectors(rule, "entities"), selectors(candidate, "entities"))
+                                && new java.math.BigDecimal(String.valueOf(rule.get("money"))).compareTo(new java.math.BigDecimal(rates.get(i))) == 0)
+                            rule.put("money", candidate.get("money"));
+                    } catch (NumberFormatException ignored) { /* Normal validation reports invalid amounts. */ }
+                }
+                rules.add(rule);
+            }
+            if (java.util.Set.of("farming", "building", "exploring").contains(canonical)) {
+                var present = rules.stream().map(rule -> rule.get("activity")).collect(java.util.stream.Collectors.toSet());
+                var additions = switch (canonical) {
+                    case "farming" -> java.util.Set.of("shear", "beehive-harvest", "tame");
+                    case "building" -> java.util.Set.of("stonecut", "loom");
+                    default -> java.util.Set.of("biome-discover", "cartography");
+                };
+                for (var candidate : candidates) if (additions.contains(candidate.get("activity")) && !present.contains(candidate.get("activity"))) {
+                    var added = new java.util.LinkedHashMap<String, Object>(); candidate.forEach((key, value) -> added.put(key.toString(), value));
+                    rules.add(added);
+                }
+                String former = switch (canonical) {
+                    case "farming" -> "Harvest mature crops and breed animals.";
+                    case "building" -> "Craft brickwork, bookshelves, flower pots and jack o'lanterns.";
+                    default -> "Explore on foot.";
+                };
+                if (former.equals(job.getString("description"))) job.set("description", defaults.getString("jobs." + canonical + ".description"));
+            }
+            job.set("rules", rules);
+        }
+        for (String id : java.util.List.of("archaeology", "smithing"))
+            if (!jobs.contains(id)) jobs.createSection(id, defaults.getConfigurationSection("jobs." + id).getValues(false));
     }
     private static void retuneDefaults(YamlConfiguration yaml, YamlConfiguration defaults, long version) {
         for (String id : java.util.List.of("digging", "digger", "dueling", "gladiator", "fishing", "hunting", "hunter")) {

@@ -32,7 +32,7 @@ public final class DataStore implements AutoCloseable {
     }
     private void initialize() throws SQLException {
         try (var s = db.createStatement(); var rows = s.executeQuery("PRAGMA user_version")) {
-            if (rows.next() && rows.getInt(1) > 4) {
+            if (rows.next() && rows.getInt(1) > 6) {
                 throw new SQLException("This jobs.db belongs to a newer JustJobs version");
             }
         }
@@ -49,6 +49,7 @@ public final class DataStore implements AutoCloseable {
             s.execute("CREATE TABLE IF NOT EXISTS travel (uuid TEXT NOT NULL REFERENCES players(uuid), job TEXT NOT NULL, distance REAL NOT NULL, PRIMARY KEY(uuid,job))");
             s.execute("CREATE TABLE IF NOT EXISTS paycheck_jobs (uuid TEXT NOT NULL REFERENCES players(uuid), job TEXT NOT NULL, amount TEXT NOT NULL, due INTEGER NOT NULL, PRIMARY KEY(uuid,job,due))");
             s.execute("CREATE TABLE IF NOT EXISTS payment_jobs (payment TEXT NOT NULL REFERENCES payments(id) ON DELETE CASCADE, job TEXT NOT NULL, amount TEXT NOT NULL, PRIMARY KEY(payment,job))");
+            s.execute("CREATE TABLE IF NOT EXISTS discovered_biomes (uuid TEXT NOT NULL REFERENCES players(uuid), biome TEXT NOT NULL, PRIMARY KEY(uuid,biome))");
         }
         var columns = new java.util.HashSet<String>();
         try (var s = db.createStatement(); var rows = s.executeQuery("PRAGMA table_info(players)")) {
@@ -58,8 +59,9 @@ public final class DataStore implements AutoCloseable {
             if (!columns.contains("boss_bar")) s.execute("ALTER TABLE players ADD COLUMN boss_bar INTEGER NOT NULL DEFAULT 1");
             if (!columns.contains("payday_chat")) s.execute("ALTER TABLE players ADD COLUMN payday_chat INTEGER NOT NULL DEFAULT 1");
             if (!columns.contains("payday_at")) s.execute("ALTER TABLE players ADD COLUMN payday_at INTEGER NOT NULL DEFAULT 0");
+            if (!columns.contains("time_format")) s.execute("ALTER TABLE players ADD COLUMN time_format INTEGER CHECK(time_format IN (12,24))");
             s.execute("UPDATE payments SET status='RESERVED' WHERE status='REVIEW'");
-            s.execute("PRAGMA user_version=4");
+            s.execute("PRAGMA user_version=6");
         }
     }
 
@@ -71,6 +73,9 @@ public final class DataStore implements AutoCloseable {
                 p.notifications = rows.getBoolean("notifications");
                 p.bossBar = rows.getBoolean("boss_bar");
                 p.paydayChat = rows.getBoolean("payday_chat");
+                int hours = rows.getInt("time_format");
+                p.timeFormat = rows.wasNull() ? null : hours;
+                if (p.timeFormat != null && hours != 12 && hours != 24) throw new SQLException("Invalid time format for " + p.id);
                 p.paycheck.restoreNext(rows.getLong("payday_at"));
                 p.pending = new BigDecimal(rows.getString("pending"));
                 if (p.pending.signum() < 0) throw new SQLException("Negative pending balance for " + p.id);
@@ -100,6 +105,9 @@ public final class DataStore implements AutoCloseable {
                 p.paycheck.restore(p.paycheck.snapshot().next(), rows.getString("job"), new BigDecimal(rows.getString("amount")), rows.getBoolean("due"));
             }
         }
+        try (var s = db.createStatement(); var rows = s.executeQuery("SELECT * FROM discovered_biomes")) {
+            while (rows.next()) player(result, rows.getString("uuid")).biomes.add(rows.getString("biome"));
+        }
         for (var p : result.values()) p.paycheck.reconcile(p.pending);
         return result;
     }
@@ -112,9 +120,15 @@ public final class DataStore implements AutoCloseable {
     }
 
     private void write(PlayerProfile.Snapshot p) throws SQLException {
-        try (var s = db.prepareStatement("INSERT INTO players (uuid,name,notifications,pending,boss_bar,payday_chat,payday_at) VALUES (?,?,?,?,?,?,?) ON CONFLICT(uuid) DO UPDATE SET name=excluded.name, notifications=excluded.notifications, pending=excluded.pending, boss_bar=excluded.boss_bar, payday_chat=excluded.payday_chat, payday_at=excluded.payday_at")) {
+        try (var s = db.prepareStatement("INSERT INTO players (uuid,name,notifications,pending,boss_bar,payday_chat,payday_at,time_format) VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(uuid) DO UPDATE SET name=excluded.name, notifications=excluded.notifications, pending=excluded.pending, boss_bar=excluded.boss_bar, payday_chat=excluded.payday_chat, payday_at=excluded.payday_at, time_format=excluded.time_format")) {
             s.setString(1, p.id().toString()); s.setString(2, p.name()); s.setBoolean(3, p.notifications()); s.setString(4, p.pending().toPlainString()); s.setBoolean(5, p.bossBar());
-            s.setBoolean(6, p.paydayChat()); s.setLong(7, p.paycheck().next()); s.executeUpdate();
+            s.setBoolean(6, p.paydayChat()); s.setLong(7, p.paycheck().next());
+            if (p.timeFormat() == null) s.setNull(8, java.sql.Types.INTEGER); else s.setInt(8, p.timeFormat());
+            s.executeUpdate();
+        }
+        try (var s = db.prepareStatement("INSERT OR IGNORE INTO discovered_biomes VALUES (?,?)")) {
+            for (String biome : p.biomes()) { s.setString(1, p.id().toString()); s.setString(2, biome); s.addBatch(); }
+            s.executeBatch();
         }
         try (var s = db.prepareStatement("INSERT INTO progress VALUES (?,?,?) ON CONFLICT(uuid,job) DO UPDATE SET xp=excluded.xp")) {
             for (var entry : p.xp().entrySet()) {

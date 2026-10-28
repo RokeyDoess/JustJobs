@@ -9,24 +9,30 @@ Change a rule's `xp` and `money` to tune its reward. Set a job's `enabled` to `f
 | Job | Default money reward |
 | --- | --- |
 | Digging | 0.0085 per natural soil or sand block |
-| Mining | 0.0075 per natural stone block; ores pay 0.03, 0.10, or 0.50 |
+| Mining | 0.006 per natural stone block; ores pay 0.03, 0.08, or 0.35 |
 | Treefelling | 0.075 per eligible log |
-| Hunting | 0.1667 per hostile mob killed |
-| Dueling | 5 per player kill, with a 60-second cooldown between the same two players |
+| Hunting | 0.05 per hostile mob killed |
+| Dueling | 2.5 per player kill, with a 60-second cooldown between the same two players |
 | Trading | 0.10 per emerald spent with a villager |
-| Exploring | 0.001 per block walked, awarded every 500 blocks |
+| Exploring | 0.00075 per block walked, awarded every 500 blocks; 0.25 per new biome; 0.05 per map expanded or locked |
 | Sailing | 0.0005 per block sailed, awarded every 500 blocks |
-| Enchanting | 0.50 per level spent at an enchanting table |
-| Farming | 0.02 per mature crop or berry harvest; 0.50 per animal bred |
+| Enchanting | 0.35 per level spent at an enchanting table |
+| Farming | 0.02 per crop harvest; 0.50 per animal bred; 0.025 per sheep sheared; 0.05 per hive harvest; 0.25 per animal tamed |
 | Fishing | 0.25 per successful rod catch |
 | Engineering | 0.02, 0.05, or 0.15 per crafted component or rail |
-| Building | 0.015 per allowed block crafted |
+| Building | 0.015 per allowed block crafted; 0.005 per allowed stonecutter output; 0.025 per banner pattern applied |
+| Archaeology | 0.15 per completed natural excavation; 0.05 per natural decorated pot broken |
+| Smithing | 0.025–0.10 per armor or weapon crafted; 0.25 per upgrade; 0.05 per trim; 0.25 per full durability repair; 0.01 per iron, copper or gold ingot smelted |
+| Cooking | 0.005 per food cooked; 0.0025 per cookie, 0.01 per bread or simple soup, 0.05 per larger meal or golden food crafted |
+| Brewing | 0.025–0.10 per potion ingredient consumed, including upgrades; the menu names each ingredient group |
 
 Mining's common ore group is coal, copper, Nether gold, and quartz. Iron, gold, redstone, and lapis use the middle rate. Diamond, emerald, and ancient debris use the highest rate. The jobs menu names each reward group; edit a rule's `description` when changing what it pays for.
 
 Engineering pays 0.02 for redstone torches, repeaters, tripwire hooks, and ordinary rails; 0.05 for powered, detector, and activator rails; and 0.15 for components such as pistons, observers, and hoppers. Rates are per output item, so crafting 16 ordinary rails earns 0.32.
 
-Building allows thirteen outputs: bricks, stone bricks, mud bricks, Nether bricks, red Nether bricks, End stone bricks, purpur blocks, deepslate tiles, tuff bricks, polished blackstone bricks, bookshelves, flower pots, and jack o'lanterns. Planks, logs, slabs, stairs, panes, recoloring, and reversible storage blocks are excluded.
+Building's crafting list stays limited to brickwork, bookshelves, flower pots, and jack o'lanterns. Stonecutting has its own list of finished brick slabs, stairs, and walls. Planks, logs, ordinary stone slabs, panes, recoloring recipes, and reversible storage blocks don't pay by default. Weaving pays for applying a banner pattern with dye.
+
+Set `boss-bar-cooldown-seconds` on any job to space out its progress-bar popups. Cooking and Smithing default to `30`; other jobs default to `0` (no cooldown). The bar stays for the usual `feedback.boss-bar-seconds`, with live progress while visible, then waits until the cooldown ends before opening again. Frequent rewards don't keep it pinned on screen. This only affects the bar: XP, money, and chat messages continue normally. Each player has a separate cooldown for each job, and `/jobs reload` applies changes.
 
 ## Adding a job
 
@@ -63,18 +69,44 @@ Keep the ID (`snow_digging` here) stable to preserve progress. IDs use lowercase
 | `sail` | Each block traveled while driving a boat on water |
 | `enchant` | Each level spent at an enchanting table: 1, 2, or 3 |
 | `block-place` | A new placement, once per world location; available for custom jobs only |
+| `shear` | An animal successfully sheared with nonempty drops; select `entities` |
+| `beehive-harvest` | A full hive manually harvested; select `HONEY_BOTTLE` or `HONEYCOMB` in `materials` |
+| `tame` | The first successful taming of an animal; select `entities` |
+| `stonecut` | Each output item taken from a stonecutter; select output `materials` |
+| `loom` | A banner pattern applied while consuming dye; select banner `materials` |
+| `brush` | A completed natural suspicious-sand or suspicious-gravel excavation with loot; select block `materials` |
+| `smith` | A completed smithing-table operation; select output `materials` and optionally `operations: [upgrade, trim]` |
+| `anvil-repair` | The fraction of an item's full durability restored at an anvil; select output `materials` |
+| `cure-villager` | The first cure of a villager, credited to its online curing player; select `entities: [VILLAGER]`. Available for custom jobs |
+| `cartography` | A completed map operation; select `materials: [FILLED_MAP]` and optionally `operations: [expand, lock, copy]` |
+| `biome-discover` | First visit to a biome per player; select `biomes: ['*']` or names such as `minecraft:forest` |
+| `smelt` | Nonfood output from a furnace or blast furnace, credited to whoever manually loaded its input; select output `materials` |
+| `cook` | Food cooked in a furnace, smoker or campfire; select output `materials` |
+| `brew` | One manually loaded potion ingredient consumed, regardless of bottle count; select ingredient `materials` |
 
-Block and crafting rules use `materials`, such as `[DIRT, SAND]`. Block tags such as `'#minecraft:logs'` are supported. Fishing uses caught item names, such as `[COD, SALMON]`. Mob and breeding rules use `entities`, such as `[ZOMBIE, SKELETON]` or `[COW, SHEEP]`. `'#hostile'` selects hostile mobs; `'*'` matches everything for that activity. Matching rules add together, including across jobs.
+Material rules use names such as `[DIRT, SAND]`; block tags such as `'#minecraft:logs'` are also supported. Fishing uses caught item names, such as `[COD, SALMON]`. Animal and mob rules use `entities`, such as `[COW, SHEEP]`. `'#hostile'` selects hostile mobs; `'*'` matches everything for that selector. Matching rules add together, including across jobs.
 
-Harvests must be mature and credited to a player. Farming includes the crops and berries listed in `jobs.yml`; melons, pumpkins, sugar cane, and cactus aren't included. Enchanting excludes anvils and grindstones. Crafting includes bulk and hotbar crafting but excludes automatic crafters and stonecutters. Failed or cancelled actions earn nothing.
+Harvests must be mature and credited to a player. Farming includes the crops and berries listed in `jobs.yml`; melons, pumpkins, sugar cane, and cactus aren't included. Automatic crafters, dispenser shearing, and automated hive harvesting don't pay. Stonecutting uses its own activity, separate from crafting-grid rewards. Failed or cancelled actions earn nothing.
+
+Smithing upgrades and trims can have separate rates using `operations`. Cartography defaults to expanding and locking maps; copying doesn't pay unless explicitly enabled. Anvil rewards scale with restored durability: repairing half an item earns half the configured XP and money. Renaming, enchanting, and Mending alone don't count as anvil repairs.
+
+Biome discoveries start being tracked after this update. Each biome pays once per player across all worlds and jobs, and the history survives restarts. Walking or riding into a biome counts; teleport events don't. Taming history stays with the animal. Curing history follows villagers through reinfection, so curing the same villager repeatedly doesn't pay.
+
+For smelting and cooking, each manually loaded quantity keeps its own player attribution. Inputs process in insertion order; withdrawals remove the newest quantities first. Campfires track each food slot separately. Fuel and whoever collects the output don't affect credit. Cooking and nonfood smelting are separate activities, so one result doesn't pay both.
+
+Brewing tracks only the consumed recipe ingredient. One ingredient earns one reward whether it changes one bottle or three. Bottle loading can be automated, and potion enhancements count. Blaze powder used as fuel doesn't pay; blaze powder used as a potion ingredient does.
+
+Hopper-fed raw items and brewing ingredients don't pay. Hoppers may supply fuel or collect output. Inputs already inside a workstation when tracking starts are uncredited. Loading must happen while the player is eligible to earn; their batches can finish after logout and survive restarts. Rewards enter the normal cap and paycheck when processing completes. Unknown inventory changes aren't assigned to the last player who used the block.
 
 ## Money and limits
 
-Players can earn 100 currency per job between paydays by default. Every job's allowance resets at the scheduled payday, including for offline players and when a deposit needs to retry. XP continues after the cap; excess money is not banked for later. The allowance survives reloads and restarts.
+Players can earn 25 currency per job between paydays by default. Every job's allowance resets at the scheduled payday, including for offline players and when a deposit needs to retry. XP continues after the cap; excess money is not banked for later. The allowance survives reloads and restarts.
+
+Defaults aim for roughly 10–20 coins per player-hour of mixed survival play. That's a tuning target, not a global cap or a guaranteed income; farm output and play styles vary.
 
 With paydays disabled, caps use a rolling hour instead. That allowance returns in minute buckets, which can add up to a minute before older earnings expire.
 
-Set `economy.hourly-income-limit-per-job` in `config.yml`, or add `hourly-income-limit` inside a job to override it. These existing key names still apply in payday mode. Use `0` for no limit. A custom payday interval changes the cap period too: a two-hour payday allows 100 per job over those two hours, not 100 each hour.
+Set `economy.hourly-income-limit-per-job` in `config.yml`, or add `hourly-income-limit` inside a job to override it. These existing key names still apply in payday mode. Use `0` for no limit. A custom payday interval changes the cap period too: a two-hour payday allows 25 per job over those two hours, not 25 each hour.
 
 Paydays run every real-time hour by default, on the hour, for all players together. Offline players are included where the economy provider supports their accounts. Earnings made after the cutoff use the new allowance and wait for the following payday.
 
@@ -92,19 +124,40 @@ Your economy must make deposits visible in its Vault balance immediately. Vault 
 
 Exploring and Sailing update every 500 blocks by default. Each job's `distance-per-reward` changes the update interval. Rule rates stay per block, so changing the interval doesn't change the total reward. Unfinished distance is saved. Slow sailing samples accumulate rather than being discarded.
 
+Walking earns 0.02 XP per block (10 XP per update); sailing earns 0.01 (5 XP per update). Their money rates are separate.
+
 Players start at level 1. Shared progression settings are in `config.yml`:
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
-| `first-level-xp` | 25 | XP needed to reach level 2 |
-| `early-level-xp` | 150 | Requirement at the last early level |
+| `first-level-xp` | 10 | XP needed to reach level 2 |
+| `early-level-xp` | 40 | Requirement at the last early level |
 | `early-level` | 10 | Last early level |
-| `plateau-xp` | 2500 | Flat next-level requirement at the plateau |
+| `plateau-xp` | 200 | Flat next-level requirement at the plateau |
 | `plateau-level` | 50 | First plateau level |
 
-Requirements rise linearly between those points: 25 XP at level 1, 81 at level 5, 150 at level 10, 1,325 at level 30, and 2,500 from level 50 onward. Dueling starts at 10 XP, so the first kill earns a level.
+Requirements rise linearly between those points, then stay flat from level 50 onward. There is no level cap. Default jobs use their own quotas where activity volumes differ:
+
+| Job | XP for level 1 → 2 | XP for level 10 → 11 | XP per level from 50 onward |
+| --- | --- | --- | --- |
+| Digging | 40 | 150 | 1,000 |
+| Mining | 40 | 150 | 1,500 |
+| Treefelling | 12 | 60 | 400 |
+| Hunting | 20 | 80 | 500 |
+| Dueling | 10 | 30 | 100 |
+| Trading, Fishing, Brewing | 10 | 30 | 150 |
+| Exploring, Building, Smithing, Cooking | 10 | 40 | 200 |
+| Sailing | 5 | 25 | 100 |
+| Enchanting | 25 | 75 | 250 |
+| Farming | 20 | 80 | 600 |
+| Engineering | 15 | 60 | 300 |
+| Archaeology | 5 | 20 | 50 |
+
+Cooked food and smelted ingots earn 1 XP each. Starting from zero, 10 items reach level 2, 24 reach level 3, and 128 reach level 7. Level 50 takes 4,933 XP in those jobs, and each level after that costs 200. Mining takes 33,144 XP to reach level 50 and 1,500 per level afterward. These are action counts and quotas, not estimates of play time.
 
 Put `progression` inside a job to override shared values. Its `xp-multiplier` defaults to `1`: `2` requires twice the XP at every level, while `0.5` halves it. It does not compound. Changing progression keeps earned XP but may change displayed levels.
+
+Personal level-up messages have ten seconds between them by default. If several levels arrive together, the next message shows the latest reached level for that job. XP applies immediately. Turning messages off or leaving clears any delayed notices; global milestones have their own setting and announce immediately.
 
 ## Shared settings
 
@@ -116,10 +169,13 @@ These are in `config.yml`. Times are in seconds unless marked otherwise.
 | `economy.payday-enabled` | true | Hold new earnings for scheduled paydays |
 | `economy.payday-interval-minutes` | 60 | Minutes between shared paydays |
 | `economy.payout-chat` | false | Allow payment messages in immediate-payout mode |
+| `display.time-format` | 12 | Default clock format: `12` uses AM/PM; `24` uses a 24-hour clock. Players can override it in Settings |
 | `feedback.payday-chat` | true | Allow payday messages |
 | `feedback.payday-chat-default` | true | Starting payday chat preference for new players |
 | `feedback.level-up-chat` | true | Allow level-up messages |
 | `feedback.level-up-chat-default` | true | Starting chat preference for new players |
+| `feedback.level-up-chat-interval-seconds` | 10 | Minimum spacing between personal level messages across jobs; `0` disables spacing |
+| `feedback.milestone-level-interval` | 50 | Global job announcements every N levels; `0` disables them |
 | `feedback.boss-bar` | true | Allow progress bars |
 | `feedback.boss-bar-seconds` | 6 | How long a progress bar stays visible |
 | `feedback.leaderboard-preview-size` | 5 | Top players shown per job in the leaderboard selector; 1–10 |
@@ -132,6 +188,10 @@ These are in `config.yml`. Times are in seconds unless marked otherwise.
 | `rules.maximum-walk-blocks-per-sample` | 12 | Maximum walking distance counted per second |
 | `rules.maximum-sail-blocks-per-sample` | 35 | Maximum sailing distance counted per sample |
 
+Milestone announcements say `PlayerName has reached level 50 Mining`. They go to global chat even if the earning player has personal level-up messages turned off. Changing the interval with `/jobs reload` applies to future level gains and doesn't announce past milestones. A reward that skips several milestones announces only the highest one crossed.
+
+Clock times use the server's timezone. `display.time-format: 12` shows times such as `1:00 PM`; `24` shows `13:00`. This default applies to the next-paycheck entry and other clock displays until a player chooses their own format in Settings. Personal choices survive restarts and aren't changed by config reloads. Use `/jobs reload` after changing the default.
+
 ## Diagnostic logging
 
 Set `development.verbose-logging: true` to write periodic summaries to the server log. `development.summary-interval-seconds` defaults to 300 and accepts 10–3600. Logging is off by default and reloadable. It adds no per-action log messages.
@@ -140,7 +200,7 @@ Each summary includes per-job rewarded event counts, XP, credited earnings, mone
 
 ## Tracking and backups
 
-Only survival and adventure players earn rewards. Digging and Mining require natural blocks. Treefelling also accepts player-grown trees, including tree farms. New hand-placed logs do not pay. Set `natural-only: false` on a block-breaking job to allow grown or generated blocks; hand-placed blocks remain excluded.
+Only survival and adventure players earn rewards. Digging and Mining require natural blocks. Archaeology pays for natural decorated pots, including pots broken with Silk Touch; placing and breaking them again doesn't pay. Treefelling also accepts player-grown trees, including tree farms. New hand-placed logs do not pay. Set `natural-only: false` on a block-breaking job to allow grown or generated blocks; hand-placed blocks remain excluded.
 
 Hunting excludes spawners, trial spawners, spawn eggs, and other artificial spawns by default. These mobs give neither job XP nor money, even after a transformation such as a zombie becoming a drowned. Set `rules.reward-spawner-mobs: true` to allow them; the setting applies to all mob-kill jobs.
 
@@ -148,8 +208,10 @@ Tracking starts when JustJobs is installed. Older placed blocks and changes made
 
 If you add crafting rules, avoid recipes that can be reversed or recolored repeatedly. The legacy `block-place` activity can still be farmed by moving materials to fresh locations; no default job uses it.
 
-Progress saves every 30 seconds and on normal shutdown. A crash can lose unsaved progress. Back up plugin data, worlds, and economy data together while stopped: block tracking lives in world chunks, and paid money lives with your economy provider.
+Progress saves every 30 seconds and on normal shutdown. A crash can lose unsaved progress. Back up plugin data, worlds, and economy data together while stopped: block tracking and unfinished processing attribution live in world chunks, and paid money lives with your economy provider. The database backup alone doesn't include workstation inputs.
 
-Older configs upgrade once. Recognized default rates and travel intervals move to the new defaults; custom values and saved progress stay. Review custom Engineering or Building selectors when upgrading from placement rewards.
+Older configs upgrade once. Recognized default rates and the former shared cap of 100 move to the new defaults; other custom values and saved progress stay. New default jobs are added if their IDs aren't already used. Existing rules for a new activity take precedence over adding its defaults. The processing update adds Cooking, Brewing, and Smithing's ingot rule. The popup update adds the 30-second Cooking and Smithing cooldowns where unset, plus Archaeology's pot rule if it has no block-breaking rules already. Review custom Engineering or Building selectors when upgrading from placement rewards.
 
-Back up job data before upgrading. The paycheck update adds saved per-job balances and a chat preference; older builds cannot open that newer database. Restore a matching pre-upgrade backup if rolling back.
+Back up job data before upgrading. Saved clock preferences and biome discoveries update the database format; older builds cannot open the newer database. Restore a matching pre-upgrade backup if rolling back to 1.0.2. Existing XP and money already earned aren't reduced by the new rates or cap.
+
+The XP update keeps cumulative XP and applies the new requirements to it, so displayed levels can change. It doesn't replay old level-up messages or milestone announcements. Recognized default curves and XP rates upgrade once; custom curve points, reward amounts, selectors, and multipliers stay. A customized shared curve also stays in place.

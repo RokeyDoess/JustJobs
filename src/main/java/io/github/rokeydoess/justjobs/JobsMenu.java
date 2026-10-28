@@ -27,7 +27,7 @@ import java.util.Set;
 import java.util.UUID;
 
 public final class JobsMenu implements Listener {
-    private enum Action { SETTINGS, BACK, BOSS_BAR, CHAT, PAYDAY_CHAT, PAYCHECK, HOME, ALL_RANKINGS, PREVIOUS, NEXT }
+    private enum Action { SETTINGS, BACK, BOSS_BAR, CHAT, PAYDAY_CHAT, TIME_FORMAT, PAYCHECK, HOME, ALL_RANKINGS, PREVIOUS, NEXT }
     private final JustJobsPlugin plugin;
     private final Map<String, Ranking> rankings = new HashMap<>();
     private final Set<String> loading = new HashSet<>();
@@ -99,7 +99,7 @@ public final class JobsMenu implements Listener {
         var profile = plugin.profile(player);
         var border = leaderboard ? Material.PURPLE_STAINED_GLASS_PANE : Material.GRAY_STAINED_GLASS_PANE;
         for (int slot = 0; slot < inv.getSize(); slot++)
-            if (slot < 9 || slot >= 36 || slot % 9 == 0 || slot % 9 == 8) inv.setItem(slot, item(border, " "));
+            if (slot < 9 || slot >= 36) inv.setItem(slot, item(border, " "));
         int visible = Math.min(capacity, Math.max(0, count - page * capacity));
         var slots = selected == null ? MenuLayout.entries(visible) : MenuLayout.ranks(visible);
         if (selected != null) {
@@ -158,12 +158,12 @@ public final class JobsMenu implements Listener {
         var inv = holder.inventory;
         var border = previous.leaderboard ? Material.PURPLE_STAINED_GLASS_PANE : Material.GRAY_STAINED_GLASS_PANE;
         for (int slot = 0; slot < inv.getSize(); slot++)
-            if (slot < 9 || slot >= 18 || slot % 9 == 0 || slot % 9 == 8) inv.setItem(slot, item(border, " "));
-        inv.setItem(4, item(Material.COMPARATOR, "Your settings", "These preferences apply to you.", "Click an option to turn it on or off."));
+            if (slot < 9 || slot >= 18) inv.setItem(slot, item(border, " "));
+        inv.setItem(4, item(Material.COMPARATOR, "Your settings", "These preferences apply to you.", "Click an option to change it."));
         var profile = plugin.profile(player);
-        var actions = List.of(Action.BOSS_BAR, Action.CHAT, Action.PAYDAY_CHAT);
+        var actions = List.of(Action.BOSS_BAR, Action.CHAT, Action.PAYDAY_CHAT, Action.TIME_FORMAT);
         for (int i = 0; i < actions.size(); i++) {
-            int slot = 11 + i * 2;
+            int slot = 10 + i * 2;
             holder.controls.put(slot, actions.get(i));
             inv.setItem(slot, control(actions.get(i), profile, previous.leaderboard));
         }
@@ -175,13 +175,15 @@ public final class JobsMenu implements Listener {
 
     private ItemStack control(Action action, PlayerProfile profile, boolean leaderboard) {
         return switch (action) {
-            case SETTINGS -> item(Material.COMPARATOR, "Settings", "Change your boss bar and chat preferences.");
+            case SETTINGS -> item(Material.COMPARATOR, "Settings", "Change your boss bar, chat and clock preferences.");
             case BACK -> item(Material.ARROW, "Back", leaderboard ? "Return to your leaderboard page." : "Return to your jobs.");
             case PREVIOUS -> item(Material.ARROW, "Previous page");
             case NEXT -> item(Material.ARROW, "Next page");
             case BOSS_BAR -> item(Material.LEVER, "Boss bar: " + (profile.bossBar ? "On" : "Off"), "Click to toggle your progress bar.");
             case CHAT -> item(Material.PAPER, "Level-up chat: " + (profile.notifications ? "On" : "Off"), "Click to toggle your level-up messages.");
             case PAYDAY_CHAT -> item(Material.GOLD_NUGGET, "Payday chat: " + (profile.paydayChat ? "On" : "Off"), "Click to toggle your payday messages.");
+            case TIME_FORMAT -> item(Material.CLOCK, "Time format: " + plugin.timeFormat(profile) + "-hour",
+                    "Click to switch to a " + (plugin.timeFormat(profile) == 12 ? 24 : 12) + "-hour clock.");
             case PAYCHECK -> paycheck(profile);
             case HOME -> item(Material.BOOK, leaderboard ? "Back to your jobs" : "Leaderboards");
             case ALL_RANKINGS -> item(Material.COMPASS, "All leaderboards");
@@ -189,8 +191,7 @@ public final class JobsMenu implements Listener {
     }
 
     private ItemStack paycheck(PlayerProfile profile) {
-        String when = plugin.paydayEnabled() ? java.time.format.DateTimeFormatter.ofPattern("EEE HH:mm z", java.util.Locale.ROOT)
-                .withZone(java.time.ZoneId.systemDefault()).format(java.time.Instant.ofEpochMilli(plugin.nextPayday())) : "As earnings become payable";
+        String when = plugin.paydayEnabled() ? plugin.formatTime(profile, plugin.nextPayday()) : "As earnings become payable";
         long seconds = Math.max(0, (plugin.nextPayday() - System.currentTimeMillis()) / 1000);
         var lore = new ArrayList<>(List.of("Distribution: " + when, "Earned: " + plugin.currencyRate(plugin.unpaidEarnings(profile))));
         if (plugin.paydayEnabled()) lore.add("Next payday in " + seconds / 60 + "m " + seconds % 60 + "s");
@@ -242,13 +243,31 @@ public final class JobsMenu implements Listener {
             case TRAVEL -> "blocks walked";
             case SAIL -> "blocks sailed";
             case ENCHANT -> "level spent";
+            case SHEAR -> "animal sheared";
+            case BEEHIVE_HARVEST -> "hive harvest";
+            case TAME -> "animal tamed";
+            case STONECUT -> "item stonecut";
+            case LOOM -> "banner pattern applied";
+            case BRUSH -> "completed excavation";
+            case SMITH -> "smithing operation";
+            case ANVIL_REPAIR -> "full item durability repaired";
+            case CURE_VILLAGER -> "first villager cure";
+            case CARTOGRAPHY -> "map operation";
+            case BIOME_DISCOVER -> "new biome discovered";
+            case SMELT -> "item smelted";
+            case COOK -> "food cooked";
+            case BREW -> "brewing ingredient consumed";
         };
         if (!rule.description().isBlank()) unit = rule.description();
-        else if (!rule.any()) {
-            var names = !rule.materials().isEmpty() ? rule.materials().stream().map(Enum::name).sorted().toList()
-                    : rule.entities().stream().map(Enum::name).sorted().toList();
-            if (!names.isEmpty()) unit = names.stream().limit(3).map(name -> name.toLowerCase(java.util.Locale.ROOT).replace('_', ' '))
-                    .collect(java.util.stream.Collectors.joining(", ")) + (names.size() > 3 ? " + " + (names.size() - 3) + " more" : "");
+        else {
+            if (!rule.any()) {
+                var names = !rule.biomes().isEmpty() ? rule.biomes().stream().map(name -> name.replace("minecraft:", "")).sorted().toList()
+                        : !rule.materials().isEmpty() ? rule.materials().stream().map(Enum::name).sorted().toList()
+                        : rule.entities().stream().map(Enum::name).sorted().toList();
+                if (!names.isEmpty()) unit = names.stream().limit(3).map(name -> name.toLowerCase(java.util.Locale.ROOT).replace('_', ' '))
+                        .collect(java.util.stream.Collectors.joining(", ")) + (names.size() > 3 ? " + " + (names.size() - 3) + " more" : "");
+            }
+            if (!rule.operations().isEmpty()) unit += " (" + String.join(", ", rule.operations().stream().sorted().toList()) + ")";
         }
         if (travel) unit = Math.round(units) + " " + unit;
         return JustJobsPlugin.format(rule.xp() * units) + " XP + " + plugin.currencyRate(rule.money().multiply(java.math.BigDecimal.valueOf(units))) + " / " + unit;
@@ -280,6 +299,7 @@ public final class JobsMenu implements Listener {
                 case BOSS_BAR -> { plugin.toggleBossBar(player); openSettings(player, page); }
                 case CHAT -> { plugin.toggleNotifications(player); openSettings(player, page); }
                 case PAYDAY_CHAT -> { plugin.togglePaydayChat(player); openSettings(player, page); }
+                case TIME_FORMAT -> { plugin.toggleTimeFormat(player); openSettings(player, page); }
                 case PAYCHECK -> open(player, page.leaderboard, page.page, page.job);
                 case HOME -> open(player, !page.leaderboard, 0, null);
                 case ALL_RANKINGS -> open(player, true, 0, null);

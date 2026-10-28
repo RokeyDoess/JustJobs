@@ -229,16 +229,16 @@ public class ReleaseChecks extends JavaPlugin implements Listener {
         config.set("rules.reward-spawner-mobs", true); config.save(file);
         Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "jobs reload");
         killMob(huntingMob(true));
-        check(profile.xp("hunting") == before + 5 && profile.earnings.total("hunting", System.currentTimeMillis()).subtract(money).compareTo(new BigDecimal("0.1667")) == 0,
+        check(profile.xp("hunting") == before + 5 && profile.earnings.total("hunting", System.currentTimeMillis()).subtract(money).compareTo(new BigDecimal("0.05")) == 0,
                 "reload can enable spawner XP and money without migration resetting the choice");
         config.set("rules.reward-spawner-mobs", false); config.save(file);
         Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "jobs reload");
         killMob(huntingMob(true));
-        check(profile.xp("hunting") == before + 5 && profile.earnings.total("hunting", System.currentTimeMillis()).subtract(money).compareTo(new BigDecimal("0.1667")) == 0,
+        check(profile.xp("hunting") == before + 5 && profile.earnings.total("hunting", System.currentTimeMillis()).subtract(money).compareTo(new BigDecimal("0.05")) == 0,
                 "reload can disable spawner XP and money immediately");
     }
     void eventChecks() throws Exception {
-        check(jobs.registry().jobs().size() == 13, "thirteen default jobs load");
+        check(jobs.registry().jobs().size() == 17, "seventeen default jobs load");
         var dirt = block(0); dirt.setType(Material.DIRT, false);
         var cancelledBreak = new BlockBreakEvent(dirt, player); cancelledBreak.setCancelled(true);
         Bukkit.getPluginManager().callEvent(cancelledBreak);
@@ -265,7 +265,7 @@ public class ReleaseChecks extends JavaPlugin implements Listener {
         check(profile.xp("hunting") == 0 && profile.earnings.total("hunting", System.currentTimeMillis()).signum() == 0,
                 "spawner kills give neither XP nor money by default");
         killMob(huntingMob(false));
-        check(profile.xp("hunting") == 5 && profile.earnings.total("hunting", System.currentTimeMillis()).compareTo(new BigDecimal("0.1667")) == 0,
+        check(profile.xp("hunting") == 5 && profile.earnings.total("hunting", System.currentTimeMillis()).compareTo(new BigDecimal("0.05")) == 0,
                 "natural hostile mobs still earn Hunting XP and money");
         for (var reason : List.of(CreatureSpawnEvent.SpawnReason.SPAWNER, CreatureSpawnEvent.SpawnReason.TRIAL_SPAWNER)) {
             var spawned = huntingMob(false);
@@ -276,7 +276,7 @@ public class ReleaseChecks extends JavaPlugin implements Listener {
             var transformed = huntingMob(false);
             Bukkit.getPluginManager().callEvent(new EntityTransformEvent(restored, List.of(transformed), EntityTransformEvent.TransformReason.DROWNED));
             killMob(transformed);
-            check(profile.xp("hunting") == 5 && profile.earnings.total("hunting", System.currentTimeMillis()).compareTo(new BigDecimal("0.1667")) == 0,
+            check(profile.xp("hunting") == 5 && profile.earnings.total("hunting", System.currentTimeMillis()).compareTo(new BigDecimal("0.05")) == 0,
                     reason + " provenance survives saved entity data and transformations");
         }
         current = Bukkit.createInventory(null, 9);
@@ -291,7 +291,7 @@ public class ReleaseChecks extends JavaPlugin implements Listener {
             BigDecimal earned = profile.earnings.total("enchanting", System.currentTimeMillis());
             Bukkit.getPluginManager().callEvent(event);
             check(profile.xp("enchanting") - before == (button + 1) * 10
-                    && profile.earnings.total("enchanting", System.currentTimeMillis()).subtract(earned).compareTo(new BigDecimal("0.50").multiply(BigDecimal.valueOf(button + 1))) == 0,
+                    && profile.earnings.total("enchanting", System.currentTimeMillis()).subtract(earned).compareTo(new BigDecimal("0.35").multiply(BigDecimal.valueOf(button + 1))) == 0,
                     "enchant button " + (button + 1) + " pays for " + (button + 1) + " levels spent");
         }
         var recipe = new MerchantRecipe(new ItemStack(Material.BREAD), 100);
@@ -306,10 +306,10 @@ public class ReleaseChecks extends JavaPlugin implements Listener {
         check(profile.xp("trading") == 16, "repeated trades use the discounted emerald price");
         check(jobs.pvpAllowed(MAIN, RETRY) && !jobs.pvpAllowed(RETRY, MAIN), "PvP pair cooldown works in both directions");
         jobs.award(player, JobRegistry.Activity.BLOCK_BREAK, Material.STONE, null, 20_000);
-        check(profile.earnings.total("mining", System.currentTimeMillis()).compareTo(new BigDecimal("100")) == 0, "money is clamped at 100 per job");
+        check(profile.earnings.total("mining", System.currentTimeMillis()).compareTo(new BigDecimal("25")) == 0, "money is clamped at 25 per job");
         double xp = profile.xp("mining");
         jobs.award(player, JobRegistry.Activity.BLOCK_BREAK, Material.STONE, null, 1);
-        check(profile.xp("mining") == xp + 1 && profile.earnings.total("mining", System.currentTimeMillis()).compareTo(new BigDecimal("100")) == 0,
+        check(profile.xp("mining") == xp + 1 && profile.earnings.total("mining", System.currentTimeMillis()).compareTo(new BigDecimal("25")) == 0,
                 "XP continues after the money cap without banking excess money");
     }
     void newJobChecks() {
@@ -416,7 +416,7 @@ public class ReleaseChecks extends JavaPlugin implements Listener {
         check(jobs.settings() == original && replacement.stream().noneMatch(BukkitTask::isCancelled), "invalid reload retains settings and running schedules");
         yaml.set("feedback.boss-bar", true); yaml.set("economy.hourly-income-limit-per-job", null); yaml.save(file);
         Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "jobs reload");
-        check(YamlConfiguration.loadConfiguration(file).getString("economy.hourly-income-limit-per-job").equals("100"), "missing shared settings are filled without replacing owner values");
+        check(YamlConfiguration.loadConfiguration(file).getString("economy.hourly-income-limit-per-job").equals("25"), "missing shared settings are filled without replacing owner values");
         var temp = new java.io.File(getDataFolder(), "invalid-job.yml"); temp.getParentFile().mkdirs();
         var jobFile = YamlConfiguration.loadConfiguration(new java.io.File(jobs.getDataFolder(), "jobs.yml"));
         jobFile.set("jobs.digging.rules", List.of(Map.of("activity", "block-break", "materials", List.of("DIRT"), "entities", List.of("*"), "xp", 1)));
@@ -426,7 +426,7 @@ public class ReleaseChecks extends JavaPlugin implements Listener {
         jobFile = YamlConfiguration.loadConfiguration(new java.io.File(jobs.getDataFolder(), "jobs.yml"));
         jobFile.set("jobs.digging.progression.xp-multiplier", 2); jobFile.save(temp);
         var scaled = JobRegistry.load(temp, Progression.defaults());
-        check(scaled.get("digging").progression().required(50) == 5000 && scaled.get("mining").progression().required(50) == 2500,
+        check(scaled.get("digging").progression().required(50) == 2000 && scaled.get("mining").progression().required(50) == 1500,
                 "per-job XP multiplier changes only the selected job");
         jobFile.set("jobs.fishing.rules", List.of(Map.of("activity", "fish", "materials", List.of("COD"), "xp", 2, "money", ".10")));
         jobFile.save(temp);
@@ -440,6 +440,12 @@ public class ReleaseChecks extends JavaPlugin implements Listener {
     }
     List<String> lore(int slot) {
         return current.getItem(slot).getItemMeta().lore().stream().map(line -> ((net.kyori.adventure.text.TextComponent) line).content()).toList();
+    }
+    @SuppressWarnings("unchecked") int jobSlot(String id) {
+        try {
+            var slots = (Map<Integer, String>) field(current.getHolder(), "jobSlots");
+            return slots.entrySet().stream().filter(entry -> entry.getValue().equals(id)).findFirst().orElseThrow().getKey();
+        } catch (Exception failure) { throw new AssertionError(failure); }
     }
     void presentationChecks() throws Exception {
         var settingsFile = new java.io.File(jobs.getDataFolder(), "config.yml");
@@ -456,8 +462,8 @@ public class ReleaseChecks extends JavaPlugin implements Listener {
             configuredJobs.set("jobs.engineering.rules", rules); configuredJobs.save(jobsFile);
             Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "jobs reload");
             var menus = new JobsMenu(jobs); menus.open(player, false, 0, null);
-            check(lore(31).stream().anyMatch(line -> line.contains("¤0.02 / custom wiring")), "custom currency symbol and rule description apply on reload");
-            check(lore(31).stream().anyMatch(line -> line.contains("¤0.15 / piston")), "a custom rule without a description names its selected material");
+            check(lore(jobSlot("engineering")).stream().anyMatch(line -> line.contains("¤0.02 / custom wiring")), "custom currency symbol and rule description apply on reload");
+            check(lore(jobSlot("engineering")).stream().anyMatch(line -> line.contains("¤0.15 / piston")), "a custom rule without a description names its selected material");
             check(lore(19).stream().anyMatch(line -> line.contains("¤0.0085 / soil or sand block")), "small reward rates keep their exact decimal value in the menu");
             check(lore(4).stream().anyMatch(line -> line.startsWith("Unpaid earnings: ") && line.contains("¤"))
                     && lore(20).stream().anyMatch(line -> line.startsWith("Earned this hour: ¤")), "balances and hourly limits use the configured currency symbol");
@@ -483,26 +489,28 @@ public class ReleaseChecks extends JavaPlugin implements Listener {
                 "the jobs page has no leftover feedback toggles");
         check(((JobsMenu.Page) current.getHolder()).getInventory() == current && current.getItem(4).getType() == Material.BOOK && current.getItem(44).getType() == Material.OAK_DOOR,
                 "info is top center and close is bottom right");
-        check(java.util.stream.IntStream.of(19, 20, 21, 22, 23, 24, 25, 12, 13, 14, 30, 31, 32).allMatch(s -> current.getItem(s) != null && current.getItem(s).getItemMeta().lore().size() >= 6)
+        check(java.util.stream.IntStream.of(19, 20, 21, 22, 23, 24, 25, 11, 12, 13, 14, 15, 29, 30, 31, 32, 33).allMatch(s -> current.getItem(s) != null && current.getItem(s).getItemMeta().lore().size() >= 6)
                         && current.getItem(10) == null && current.getItem(0).getType() == Material.GRAY_STAINED_GLASS_PANE,
                 "jobs fill the middle row first with balanced overflow and a gray border");
         check(current.getItem(19).getData(io.papermc.paper.datacomponent.DataComponentTypes.TOOLTIP_DISPLAY).hiddenComponents()
                 .contains(io.papermc.paper.datacomponent.DataComponentTypes.ATTRIBUTE_MODIFIERS), "menu tools explicitly hide native attack attributes");
-        check(lore(20).stream().anyMatch(line -> line.contains("$0.0075 / stone block"))
+        check(lore(20).stream().anyMatch(line -> line.contains("$0.006 / stone block"))
                         && lore(20).stream().anyMatch(line -> line.contains("$0.03 / common ore (coal, copper, Nether ores)"))
-                        && lore(20).stream().anyMatch(line -> line.contains("$0.1 / iron, gold, redstone or lapis ore"))
-                        && lore(20).stream().anyMatch(line -> line.contains("$0.5 / rare ore (diamond, emerald, ancient debris)")),
+                        && lore(20).stream().anyMatch(line -> line.contains("$0.08 / iron, gold, redstone or lapis ore"))
+                        && lore(20).stream().anyMatch(line -> line.contains("$0.35 / rare ore (diamond, emerald, ancient debris)")),
                 "Mining's four rates explain which block groups qualify");
-        check(lore(31).stream().anyMatch(line -> line.contains("/ redstone torch, repeater, tripwire hook or rail crafted"))
-                        && lore(31).stream().anyMatch(line -> line.contains("/ powered, detector or activator rail crafted"))
-                        && lore(31).stream().anyMatch(line -> line.contains("/ component crafted (piston, hopper, observer, etc.)")),
+        check(lore(jobSlot("engineering")).stream().anyMatch(line -> line.contains("/ redstone torch, repeater, tripwire hook or rail crafted"))
+                        && lore(jobSlot("engineering")).stream().anyMatch(line -> line.contains("/ powered, detector or activator rail crafted"))
+                        && lore(jobSlot("engineering")).stream().anyMatch(line -> line.contains("/ component crafted (piston, hopper, observer, etc.)")),
                 "Engineering's three rates describe their component groups");
         check(profile.notifications, "level-up chat starts enabled by default");
         jobs.settings().set("feedback.level-up-chat-default", false);
         check(!jobs.profile(player(UUID.fromString("22245436-4f12-42ca-82cf-cb56909ee37a"), "QuietChecks")).notifications,
                 "server owners can change the default chat preference for new players");
         jobs.settings().set("feedback.level-up-chat-default", true);
-        check(messages.getOrDefault(MAIN, List.of()).stream().anyMatch(text -> text.startsWith("Reached level ") && text.endsWith(" Mining")),
+        var chatPlayer = player(new UUID(15, 1), "LevelMessageChecks");
+        jobs.award(chatPlayer, JobRegistry.Activity.BLOCK_BREAK, Material.STONE, null, jobs.registry().get("mining").progression().required(1));
+        check(messages.getOrDefault(chatPlayer.getUniqueId(), List.of()).stream().anyMatch(text -> text.startsWith("Reached level ") && text.endsWith(" Mining")),
                 "level-up message uses Reached level followed by the level and job name");
         var drag = new InventoryDragEvent(view(), new ItemStack(Material.DIRT), new ItemStack(Material.DIRT), false, Map.of(0, new ItemStack(Material.DIRT)));
         menus.drag(drag); check(drag.isCancelled(), "menu items cannot be dragged out");
@@ -521,16 +529,17 @@ public class ReleaseChecks extends JavaPlugin implements Listener {
         check(creative.isCancelled(), "creative inventory actions cannot alter menu items");
         menus.click(new InventoryClickEvent(view(), InventoryType.SlotType.CONTAINER, 36, ClickType.LEFT, InventoryAction.PICKUP_ALL));
         later(2, () -> {
-            check(current.getSize() == 27 && current.getItem(11).getType() == Material.LEVER
-                            && current.getItem(13).getType() == Material.PAPER && current.getItem(15).getType() == Material.GOLD_NUGGET,
-                    "settings group all three personal feedback preferences in a compact menu");
+            check(current.getSize() == 27 && current.getItem(10).getType() == Material.LEVER
+                            && current.getItem(12).getType() == Material.PAPER && current.getItem(14).getType() == Material.GOLD_NUGGET
+                            && current.getItem(16).getType() == Material.CLOCK,
+                    "settings group personal feedback and clock preferences in a compact menu");
             check(current.getItem(22).getType() == Material.ARROW && current.getItem(26).getType() == Material.OAK_DOOR,
                     "settings offer a back button and a bottom-right close button");
-            var settingsDrag = new InventoryDragEvent(view(), new ItemStack(Material.DIRT), new ItemStack(Material.DIRT), false, Map.of(11, new ItemStack(Material.DIRT)));
+            var settingsDrag = new InventoryDragEvent(view(), new ItemStack(Material.DIRT), new ItemStack(Material.DIRT), false, Map.of(10, new ItemStack(Material.DIRT)));
             menus.drag(settingsDrag); check(settingsDrag.isCancelled(), "settings items cannot be dragged out");
-            menus.click(new InventoryClickEvent(view(), InventoryType.SlotType.CONTAINER, 11, ClickType.LEFT, InventoryAction.PICKUP_ALL));
+            menus.click(new InventoryClickEvent(view(), InventoryType.SlotType.CONTAINER, 10, ClickType.LEFT, InventoryAction.PICKUP_ALL));
             later(2, () -> {
-                check(profile.bossBar && current.getSize() == 27 && current.getItem(11).getItemMeta().displayName().toString().contains("On"),
+                check(profile.bossBar && current.getSize() == 27 && current.getItem(10).getItemMeta().displayName().toString().contains("On"),
                         "toggling the boss bar updates its state without leaving settings");
                 menus.click(new InventoryClickEvent(view(), InventoryType.SlotType.CONTAINER, 22, ClickType.LEFT, InventoryAction.PICKUP_ALL));
                 later(2, () -> {
@@ -549,7 +558,7 @@ public class ReleaseChecks extends JavaPlugin implements Listener {
             later(2, () -> {
                 check(closedMenus == before + 1, "the compact settings menu closes from its own bottom-right slot");
                 boolean notifications = profile.notifications;
-                menus.click(new InventoryClickEvent(view(), InventoryType.SlotType.CONTAINER, 13, ClickType.LEFT, InventoryAction.PICKUP_ALL));
+                menus.click(new InventoryClickEvent(view(), InventoryType.SlotType.CONTAINER, 12, ClickType.LEFT, InventoryAction.PICKUP_ALL));
                 menus.open(player, false, 0, null);
                 later(2, () -> check(profile.notifications == notifications && current.getSize() == 45,
                         "a queued settings click cannot change preferences after the player leaves that page"));
@@ -565,6 +574,9 @@ public class ReleaseChecks extends JavaPlugin implements Listener {
         jobs.settings().set("rules.maximum-walk-blocks-per-sample", 1000);
         Player grounded = player(WALK, "WalkingChecks");
         Player jumpingBase = player(UUID.fromString("27d1a520-ae90-4b3d-9f49-ce485ba05c1a"), "JumpingChecks");
+        // This check isolates travel batches; discovery bonuses have their own integration checks.
+        jobs.profile(grounded).biomes.add(world.getBiome(base, 200, 2048).getKey().toString());
+        jobs.profile(jumpingBase).biomes.addAll(jobs.profile(grounded).biomes);
         Player jumping = (Player) Proxy.newProxyInstance(Player.class.getClassLoader(), new Class<?>[]{Player.class}, (p, method, args) -> switch (method.getName()) {
             case "isOnGround" -> false;
             case "getFallDistance" -> 1.0f;
@@ -579,9 +591,9 @@ public class ReleaseChecks extends JavaPlugin implements Listener {
                 "travel below 500 blocks awards no XP or money and does not open a boss bar");
         for (Player p : List.of(grounded, jumping))
             Bukkit.getPluginManager().callEvent(new PlayerMoveEvent(p, new Location(world, base, 200, 2048), new Location(world, base + .25, 201, 2048)));
-        check(jobs.profile(grounded).xp("exploring") == 5 && jobs.profile(jumping).xp("exploring") == 5,
+        check(jobs.profile(grounded).xp("exploring") == 10 && jobs.profile(jumping).xp("exploring") == 10,
                 "jumping and grounded walking count exactly the same horizontal distance");
-        check(jobs.profile(grounded).earnings.total("exploring", System.currentTimeMillis()).compareTo(new BigDecimal("0.50")) == 0
+        check(jobs.profile(grounded).earnings.total("exploring", System.currentTimeMillis()).compareTo(new BigDecimal("0.375")) == 0
                         && barsShown.getOrDefault(WALK, 0) == 1, "500-block milestone applies the full reward and one boss-bar update");
         var cancelled = new PlayerMoveEvent(grounded, new Location(world, base, 200, 2048), new Location(world, base + 1, 200, 2048));
         cancelled.setCancelled(true); Bukkit.getPluginManager().callEvent(cancelled);
@@ -616,10 +628,10 @@ public class ReleaseChecks extends JavaPlugin implements Listener {
     }
     void paymentChecks() {
         rejected.add(RETRY); throwAfter.add(UNCERTAIN);
-        check(jobs.registry().get("dueling").rules().getFirst().money().compareTo(new BigDecimal("5")) == 0, "a default Dueling kill pays five currency");
-        // Seed 12.50 to keep exercising fractional remainders with the whole-dollar Dueling default.
-        jobs.award(player(RETRY, "RetryChecks"), JobRegistry.Activity.PLAYER_KILL, null, EntityType.PLAYER, 2.5);
-        jobs.award(player(UNCERTAIN, "UncertainChecks"), JobRegistry.Activity.PLAYER_KILL, null, EntityType.PLAYER, 2.5);
+        check(jobs.registry().get("dueling").rules().getFirst().money().compareTo(new BigDecimal("2.5")) == 0, "a default Dueling kill pays two and a half currency");
+        // Seed 12.50 to exercise fractional remainders and automatic payment retries.
+        jobs.award(player(RETRY, "RetryChecks"), JobRegistry.Activity.PLAYER_KILL, null, EntityType.PLAYER, 5);
+        jobs.award(player(UNCERTAIN, "UncertainChecks"), JobRegistry.Activity.PLAYER_KILL, null, EntityType.PLAYER, 5);
     }
     void afterPayments() throws Exception {
         check(profile.bossBar, "boss-bar button applies its toggle after the inventory click");
@@ -715,12 +727,12 @@ public class ReleaseChecks extends JavaPlugin implements Listener {
         int kills = (loadTicks + 19) / 20;
         double traveled = loadTicks * .2, paidDistance = Math.floor((traveled + 1e-6) / 500) * 500;
         check(loadPlayers.stream().allMatch(p -> jobs.profile(p).xp("mining") == loadTicks && jobs.profile(p).xp("hunting") == kills * 5), "all simulated actions retain their XP");
-        check(loadPlayers.stream().allMatch(p -> Math.abs(jobs.profile(p).xp("exploring") - paidDistance * .01) < 1e-6
+        check(loadPlayers.stream().allMatch(p -> Math.abs(jobs.profile(p).xp("exploring") - 10 - paidDistance * .01) < 1e-6
                         && Math.abs(jobs.profile(p).travel.distance("exploring") - (traveled - paidDistance)) < 1e-6),
-                "movement events buffer distance without repeatedly applying travel XP");
-        var expected = new BigDecimal("0.0075").multiply(BigDecimal.valueOf(loadTicks)).min(new BigDecimal("100"))
-                .add(new BigDecimal("0.1667").multiply(BigDecimal.valueOf(kills)).min(new BigDecimal("100")))
-                .add(new BigDecimal("0.001").multiply(BigDecimal.valueOf(paidDistance)).min(new BigDecimal("100")));
+                "movement events give one discovery bonus and buffer distance without repeatedly applying travel XP");
+        var expected = new BigDecimal("0.006").multiply(BigDecimal.valueOf(loadTicks)).min(new BigDecimal("25"))
+                .add(new BigDecimal("0.05").multiply(BigDecimal.valueOf(kills)).min(new BigDecimal("25")))
+                .add(new BigDecimal("0.00075").multiply(BigDecimal.valueOf(paidDistance)).add(new BigDecimal("0.25")).min(new BigDecimal("25")));
         check(loadPlayers.stream().allMatch(p -> balances.getOrDefault(p.getUniqueId(), BigDecimal.ZERO).add(jobs.profile(p).pending).compareTo(expected) == 0),
                 "all 100 simulated players receive exact payments under load");
         check(worker.submit(store::load).get(10, TimeUnit.SECONDS).get(new UUID(1, 0)).name.equals("Saved0"), "idle saved players are not rewritten during active-player saves");
@@ -728,14 +740,14 @@ public class ReleaseChecks extends JavaPlugin implements Listener {
         getLogger().info(String.format(Locale.ROOT, "LOAD: leaderboard request with 10,000 saved players returned in %.3f ms; sorting runs off the server thread", (System.nanoTime() - before) / 1e6));
         later(20, () -> {
             menus.open(player, true, 0, "mining");
-            check(current.getItem(10).getType() == Material.PLAYER_HEAD && current.getItem(4).getItemMeta().lore().stream().anyMatch(l -> l.toString().contains("Your rank:")),
+            check(current.getItem(9).getType() == Material.PLAYER_HEAD && current.getItem(4).getItemMeta().lore().stream().anyMatch(l -> l.toString().contains("Your rank:")),
                     "large leaderboard uses player heads and includes personal rank");
-            check(java.util.stream.IntStream.range(0, 21).allMatch(index -> {
-                int slot = (1 + index / 7) * 9 + 1 + index % 7;
+            check(java.util.stream.IntStream.range(0, 27).allMatch(index -> {
+                int slot = 9 + index;
                 return current.getItem(slot).getItemMeta().displayName() instanceof net.kyori.adventure.text.TextComponent name
                         && name.content().startsWith("#" + (index + 1) + " ");
             }), "ranked player entries read left to right from the top row to the bottom row");
-            var owner = current.getItem(10).getData(io.papermc.paper.datacomponent.DataComponentTypes.PROFILE);
+            var owner = current.getItem(9).getData(io.papermc.paper.datacomponent.DataComponentTypes.PROFILE);
             check(owner != null && owner.dynamic() && owner.uuid().equals(MAIN), "leaderboard head identifies its ranked player and resolves skins without a server lookup");
             check(current.getItem(0).getType() == Material.PURPLE_STAINED_GLASS_PANE, "leaderboards use purple borders");
             int nextSlot = java.util.stream.IntStream.range(36, 44).filter(slot -> current.getItem(slot) != null
@@ -744,7 +756,7 @@ public class ReleaseChecks extends JavaPlugin implements Listener {
             var next = new InventoryClickEvent(view(), InventoryType.SlotType.CONTAINER, nextSlot, ClickType.LEFT, InventoryAction.PICKUP_ALL);
             menus.click(next);
             later(2, () -> {
-                check(current.getItem(10).getItemMeta().displayName().toString().contains("#22 "), "leaderboard next page starts with rank 22 at the top left");
+                check(current.getItem(9).getItemMeta().displayName().toString().contains("#28 "), "leaderboard next page starts with rank 28 at the top left");
                 check(current.getItem(36).getType() == Material.COMPARATOR, "detailed leaderboards also offer settings at the bottom left");
                 menus.click(new InventoryClickEvent(view(), InventoryType.SlotType.CONTAINER, 36, ClickType.LEFT, InventoryAction.PICKUP_ALL));
                 later(2, () -> {
@@ -756,7 +768,7 @@ public class ReleaseChecks extends JavaPlugin implements Listener {
                         check(current.getSize() == 27, "ranking refreshes do not replace an open settings menu");
                         menus.click(new InventoryClickEvent(view(), InventoryType.SlotType.CONTAINER, 22, ClickType.LEFT, InventoryAction.PICKUP_ALL));
                         later(2, () -> {
-                            check(current.getItem(10).getItemMeta().displayName().toString().contains("#22 "),
+                            check(current.getItem(9).getItemMeta().displayName().toString().contains("#28 "),
                                     "Back restores the selected job and leaderboard page");
                             previewChecks(menus);
                         });
@@ -783,7 +795,7 @@ public class ReleaseChecks extends JavaPlugin implements Listener {
                 jobs.settings().set("feedback.leaderboard-preview-size", 5);
                 menus.click(new InventoryClickEvent(view(), InventoryType.SlotType.CONTAINER, 36, ClickType.LEFT, InventoryAction.PICKUP_ALL));
                 later(2, () -> {
-                    menus.click(new InventoryClickEvent(view(), InventoryType.SlotType.CONTAINER, 13, ClickType.LEFT, InventoryAction.PICKUP_ALL));
+                    menus.click(new InventoryClickEvent(view(), InventoryType.SlotType.CONTAINER, 12, ClickType.LEFT, InventoryAction.PICKUP_ALL));
                     later(2, () -> {
                         check(!profile.notifications && current.getSize() == 27, "level-up chat toggles from settings without leaving the menu");
                         menus.click(new InventoryClickEvent(view(), InventoryType.SlotType.CONTAINER, 22, ClickType.LEFT, InventoryAction.PICKUP_ALL));
@@ -844,10 +856,10 @@ public class ReleaseChecks extends JavaPlugin implements Listener {
         check(!history.eligible(block(0)) && history.playerPlaced(block(15)), "natural and placed block tracking survive a server restart");
         check(!history.placementRewarded(block(3)) && !history.placementRewarded(block(4)) && !history.placementRewarded(block(6).getRelative(org.bukkit.block.BlockFace.UP)),
                 "the new defaults leave no placement claims after a restart");
-        check(profile.earnings.total("mining", System.currentTimeMillis()).compareTo(new BigDecimal("100")) == 0, "hourly cap survives a server restart");
+        check(profile.earnings.total("mining", System.currentTimeMillis()).compareTo(new BigDecimal("25")) == 0, "hourly cap survives a server restart");
         double xp = profile.xp("mining");
         jobs.award(player, JobRegistry.Activity.BLOCK_BREAK, Material.STONE, null, 1);
-        check(profile.xp("mining") == xp + 1 && profile.earnings.total("mining", System.currentTimeMillis()).compareTo(new BigDecimal("100")) == 0, "relogging or restarting cannot reset the money cap");
+        check(profile.xp("mining") == xp + 1 && profile.earnings.total("mining", System.currentTimeMillis()).compareTo(new BigDecimal("25")) == 0, "relogging or restarting cannot reset the money cap");
         later(45, () -> {
             check(crash.pending.signum() == 0 && balances.get(CRASH).compareTo(new BigDecimal("2.37")) == 0, "recovered earnings pay automatically, including fractional mode");
             check(worker.submit(store::unresolved).get(10, TimeUnit.SECONDS).isEmpty(), "restart recovery leaves no payments waiting for an admin");

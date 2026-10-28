@@ -40,6 +40,13 @@ public final class PaydayChecks extends ReleaseChecks {
         var config = YamlConfiguration.loadConfiguration(file);
         config.set("economy.payout-interval-seconds", 1); config.set("storage.autosave-seconds", 1);
         config.set("development.verbose-logging", true); config.set("development.summary-interval-seconds", 10);
+        // Fixed amounts make retry, partial-credit and period-boundary assertions independent of default balancing.
+        config.set("economy.hourly-income-limit-per-job", "100");
+        var jobFile = jobs.getDataFolder().toPath().resolve("jobs.yml").toFile();
+        var jobConfig = YamlConfiguration.loadConfiguration(jobFile);
+        var duelRule = new java.util.LinkedHashMap<String, Object>();
+        jobConfig.getMapList("jobs.dueling.rules").getFirst().forEach((key, value) -> duelRule.put(key.toString(), value));
+        duelRule.put("money", "5"); jobConfig.set("jobs.dueling.rules", List.of(duelRule)); jobConfig.save(jobFile);
         config.save(file); reload();
         check(profile.paydayChat, "payday chat starts enabled");
         jobs.award(player, JobRegistry.Activity.PLAYER_KILL, null, null, 1);
@@ -69,7 +76,7 @@ public final class PaydayChecks extends ReleaseChecks {
         menus.click(new InventoryClickEvent(view(), InventoryType.SlotType.CONTAINER, 36, ClickType.LEFT, InventoryAction.PICKUP_ALL));
         later(2, () -> {
             check(current.getSize() == 27, "the jobs page opens the separate settings menu");
-            menus.click(new InventoryClickEvent(view(), InventoryType.SlotType.CONTAINER, 15, ClickType.LEFT, InventoryAction.PICKUP_ALL));
+            menus.click(new InventoryClickEvent(view(), InventoryType.SlotType.CONTAINER, 14, ClickType.LEFT, InventoryAction.PICKUP_ALL));
             later(2, () -> {
                 check(!profile.paydayChat && current.getSize() == 27, "payday chat toggles from settings without leaving the menu");
                 jobs.togglePaydayChat(player); check(profile.paydayChat, "payday chat can be enabled again");

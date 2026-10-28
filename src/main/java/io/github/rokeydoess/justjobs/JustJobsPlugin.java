@@ -30,12 +30,15 @@ import java.util.logging.Level;
 
 public final class JustJobsPlugin extends JavaPlugin {
     private YamlConfiguration settings;
+    private TimeDisplay timeDisplay = new TimeDisplay(12);
     private JobRegistry registry;
     private DataStore store;
     private ExecutorService worker;
     private final Map<UUID, PlayerProfile> players = new HashMap<>();
     private final Map<String, Long> pvpPairs = new HashMap<>();
     private final Map<UUID, Display> bars = new HashMap<>();
+    private final BossBarCooldowns barCooldowns = new BossBarCooldowns();
+    private final LevelUpMessages levelMessages = new LevelUpMessages();
     private final Set<UUID> paying = new HashSet<>();
     private final Set<UUID> dirty = new HashSet<>();
     private final Map<String, Long> dirtyPairs = new HashMap<>();
@@ -48,6 +51,8 @@ public final class JustJobsPlugin extends JavaPlugin {
     private Boolean economyAvailable;
     private NaturalBlocks natural;
     private ActivityListener activities;
+    private WorkstationListener workstations;
+    private ProcessingListener processing;
     private long lastPrune;
     private boolean closing;
     private boolean paymentBatchInFlight;
@@ -75,6 +80,11 @@ public final class JustJobsPlugin extends JavaPlugin {
             getServer().getPluginManager().registerEvents(natural, this);
             getServer().getPluginManager().registerEvents(activities, this);
             getServer().getPluginManager().registerEvents(new CraftingListener(this), this);
+            workstations = new WorkstationListener(this);
+            getServer().getPluginManager().registerEvents(workstations, this);
+            processing = new ProcessingListener(this);
+            getServer().getPluginManager().registerEvents(processing, this);
+            getServer().getPluginManager().registerEvents(new AdditionalActivities(this, natural), this);
             getServer().getPluginManager().registerEvents(menus, this);
             refreshEconomy();
             scheduleTasks();
@@ -91,16 +101,16 @@ public final class JustJobsPlugin extends JavaPlugin {
         var next = new YamlConfiguration();
         next.options().parseComments(true);
         next.load(new File(getDataFolder(), "config.yml"));
-        for (String section : List.of("economy", "feedback", "storage", "progression", "rules", "development"))
+        for (String section : List.of("economy", "feedback", "display", "storage", "progression", "rules", "development"))
             if (next.contains(section) && !next.isConfigurationSection(section)) throw new IllegalArgumentException(section + " must be a section");
-        ConfigUpgrade.settings(next);
+        boolean retunedCurve = ConfigUpgrade.settings(next);
         YamlConfiguration defaults;
         try (var reader = new java.io.InputStreamReader(getResource("config.yml"), java.nio.charset.StandardCharsets.UTF_8)) {
             defaults = YamlConfiguration.loadConfiguration(reader);
         }
         for (String key : defaults.getKeys(true)) if (!defaults.isConfigurationSection(key) && !next.contains(key)) next.set(key, defaults.get(key));
-        ConfigValues.keys(next, Set.of("config-version", "economy", "feedback", "storage", "progression", "rules", "development"));
-        for (String section : List.of("economy", "feedback", "storage", "progression", "rules", "development")) {
+        ConfigValues.keys(next, Set.of("config-version", "economy", "feedback", "display", "storage", "progression", "rules", "development"));
+        for (String section : List.of("economy", "feedback", "display", "storage", "progression", "rules", "development")) {
             if (!next.isConfigurationSection(section)) throw new IllegalArgumentException(section + " must be a section");
             ConfigValues.keys(next.getConfigurationSection(section), defaults.getConfigurationSection(section).getKeys(false));
         }
@@ -110,23 +120,29 @@ public final class JustJobsPlugin extends JavaPlugin {
             ConfigValues.bool(next, key, defaults.getBoolean(key));
         ConfigValues.integer(next, "economy.payday-interval-minutes", 60, 1, 1440);
         ConfigValues.integer(next, "development.summary-interval-seconds", 300, 10, 3600);
-        ConfigValues.money(next, "economy.hourly-income-limit-per-job", new BigDecimal("100"));
+        ConfigValues.money(next, "economy.hourly-income-limit-per-job", new BigDecimal("25"));
         ConfigValues.text(next, "economy.currency-symbol", "$", 16);
         ConfigValues.integer(next, "feedback.leaderboard-preview-size", 5, 1, 10);
+        ConfigValues.integer(next, "feedback.milestone-level-interval", 50, 0, Integer.MAX_VALUE);
+        ConfigValues.integer(next, "feedback.level-up-chat-interval-seconds", 10, 0, 86400);
+        var nextTimeDisplay = new TimeDisplay((int) ConfigValues.integer(next, "display.time-format", 12, 12, 24));
         ConfigValues.strings(next, "rules.excluded-worlds");
         for (String key : List.of("rules.travel-minimum-displacement", "rules.maximum-walk-blocks-per-sample", "rules.maximum-sail-blocks-per-sample")) {
             double value = ConfigValues.number(next, key, defaults.getDouble(key));
             if (!Double.isFinite(value) || value <= 0 || value > 1000) throw new IllegalArgumentException(key + " must be positive and at most 1000");
         }
-        var curve = new Progression(ConfigValues.number(next, "progression.first-level-xp", 25), ConfigValues.number(next, "progression.early-level-xp", 150),
-                ConfigValues.number(next, "progression.plateau-xp", 2500), (int) ConfigValues.integer(next, "progression.early-level", 10, 2, 9999),
+        var curve = new Progression(ConfigValues.number(next, "progression.first-level-xp", 10), ConfigValues.number(next, "progression.early-level-xp", 40),
+                ConfigValues.number(next, "progression.plateau-xp", 200), (int) ConfigValues.integer(next, "progression.early-level", 10, 2, 9999),
                 (int) ConfigValues.integer(next, "progression.plateau-level", 50, 3, 10000), 1);
-        var loadedJobs = JobRegistry.prepare(new File(getDataFolder(), "jobs.yml"), curve);
+        var loadedJobs = JobRegistry.prepare(new File(getDataFolder(), "jobs.yml"), curve, retunedCurve ? new Progression(25, 150, 2500, 10, 50, 1) : null);
         String jobsText = loadedJobs.upgraded() ? loadedJobs.configuration().saveToString()
                 : java.nio.file.Files.readString(getDataFolder().toPath().resolve("jobs.yml"));
+        if (processing != null) processing.flush();
         ConfigFiles.save(getDataFolder().toPath(), next.saveToString(), jobsText);
         settings = next;
         registry = loadedJobs.registry();
+        timeDisplay = nextTimeDisplay;
+        levelMessages.clear();
     }
 
     private void refreshEconomy() {
@@ -160,6 +176,11 @@ public final class JustJobsPlugin extends JavaPlugin {
     }
 
     public YamlConfiguration settings() { return settings; }
+    public int timeFormat(PlayerProfile profile) { return profile.timeFormat == null ? settings.getInt("display.time-format", 12) : profile.timeFormat; }
+    public String formatTime(PlayerProfile profile, long timestamp) {
+        var display = profile.timeFormat == null ? timeDisplay : new TimeDisplay(profile.timeFormat);
+        return display.format(timestamp, java.time.ZoneId.systemDefault());
+    }
     public JobRegistry registry() { return registry; }
     public Map<UUID, PlayerProfile> players() { return players; }
     public PlayerProfile profile(Player player) {
@@ -173,7 +194,7 @@ public final class JustJobsPlugin extends JavaPlugin {
         return profile;
     }
     public BigDecimal hourlyLimit(JobRegistry.Job job) {
-        return job.hourlyLimit() == null ? new BigDecimal(settings.getString("economy.hourly-income-limit-per-job", "100")) : job.hourlyLimit();
+        return job.hourlyLimit() == null ? new BigDecimal(settings.getString("economy.hourly-income-limit-per-job", "25")) : job.hourlyLimit();
     }
     public BigDecimal capEarnings(PlayerProfile profile, String job, long now) {
         return paydayEnabled() ? profile.paycheck.earned(job, now) : profile.earnings.total(job, now);
@@ -189,8 +210,21 @@ public final class JustJobsPlugin extends JavaPlugin {
     }
 
     public void award(Player player, JobRegistry.Activity activity, Material material, EntityType entity, double units, boolean naturalBlock) {
+        award(player, activity, material, entity, units, naturalBlock, null);
+    }
+    public void award(Player player, JobRegistry.Activity activity, Material material, EntityType entity, double units, String detail) {
+        award(player, activity, material, entity, units, true, detail);
+    }
+    private void award(Player player, JobRegistry.Activity activity, Material material, EntityType entity, double units, boolean naturalBlock, String detail) {
         if (!eligible(player) || !Double.isFinite(units) || units <= 0) return;
-        var profile = profile(player);
+        award(profile(player), player, activity, material, entity, units, naturalBlock, detail);
+    }
+    public void awardProcessed(UUID owner, org.bukkit.World world, JobRegistry.Activity activity, Material material, double units) {
+        if (storageFailed || !Double.isFinite(units) || units <= 0 || settings.getStringList("rules.excluded-worlds").contains(world.getName())) return;
+        var profile = players.get(owner);
+        if (profile != null) award(profile, Bukkit.getPlayer(owner), activity, material, null, units, true, null);
+    }
+    private void award(PlayerProfile profile, Player player, JobRegistry.Activity activity, Material material, EntityType entity, double units, boolean naturalBlock, String detail) {
         long now = System.currentTimeMillis();
         for (var job : registry.jobs()) {
             if (activity == JobRegistry.Activity.BLOCK_BREAK && job.naturalOnly() && !naturalBlock) continue;
@@ -202,7 +236,7 @@ public final class JustJobsPlugin extends JavaPlugin {
             }
             double xp = 0;
             BigDecimal money = BigDecimal.ZERO;
-            for (var rule : job.rules()) if (rule.matches(activity, material, entity)) {
+            for (var rule : job.rules()) if (rule.matches(activity, material, entity, detail)) {
                 xp += rule.xp() * rewardUnits;
                 money = money.add(rule.money().multiply(BigDecimal.valueOf(rewardUnits)));
             }
@@ -221,11 +255,24 @@ public final class JustJobsPlugin extends JavaPlugin {
             dirty.add(profile.id);
             if (credited.signum() > 0) { payoutQueue.add(profile.id); unpaid.add(profile.id); }
             var progress = job.progression().progress(after);
-            if (settings.getBoolean("feedback.level-up-chat", true) && profile.notifications && progress.level() > job.progression().progress(before).level())
-                player.sendMessage(Component.text("Reached level " + progress.level() + " " + job.name(), NamedTextColor.GREEN));
-            if (settings.getBoolean("feedback.boss-bar", true) && profile.bossBar) {
+            int previousLevel = job.progression().progress(before).level();
+            if (player != null && settings.getBoolean("feedback.level-up-chat", true) && profile.notifications && progress.level() > previousLevel) {
+                levelMessages.offer(profile.id, new LevelUpMessages.Notice(job.id(), job.name(), progress.level()));
+                flushLevelMessages(player, now);
+            }
+            int milestone = Progression.milestoneCrossed(previousLevel, progress.level(), settings.getInt("feedback.milestone-level-interval", 50));
+            if (milestone > 0)
+                Bukkit.broadcast(Component.text(profile.name + " has reached level " + milestone + " " + job.name(), NamedTextColor.GOLD));
+            if (player != null && settings.getBoolean("feedback.boss-bar", true) && profile.bossBar) {
                 var display = bars.get(player.getUniqueId());
+                if (display != null && display.expires() <= now) {
+                    player.hideBossBar(display.bar());
+                    bars.remove(player.getUniqueId());
+                    display = null;
+                }
                 if (display != null && !display.job().equals(job.id()) && now - display.shown() < 2000) continue;
+                boolean opening = display == null || !display.job().equals(job.id());
+                if (opening && !barCooldowns.acquire(player.getUniqueId(), job.id(), now, job.bossBarCooldownSeconds() * 1000)) continue;
                 var bar = display == null ? BossBar.bossBar(Component.empty(), 0, job.color(), BossBar.Overlay.PROGRESS) : display.bar();
                 boolean capped = hourlyLimit(job).signum() > 0 && capEarnings(profile, job.id(), now).compareTo(hourlyLimit(job)) >= 0;
                 String capMessage = payday ? "Paycheck money limit reached" : "Hourly money limit reached";
@@ -233,10 +280,20 @@ public final class JustJobsPlugin extends JavaPlugin {
                         + (capped ? " • " + capMessage : "")));
                 bar.progress((float) progress.fraction()); bar.color(job.color());
                 if (display == null) player.showBossBar(bar);
-                long shown = display == null || !display.job().equals(job.id()) ? now : display.shown();
-                bars.put(player.getUniqueId(), new Display(bar, job.id(), shown, now + settings.getLong("feedback.boss-bar-seconds", 6) * 1000));
+                long shown = opening ? now : display.shown();
+                long expires = !opening && job.bossBarCooldownSeconds() > 0 ? display.expires()
+                        : now + settings.getLong("feedback.boss-bar-seconds", 6) * 1000;
+                bars.put(player.getUniqueId(), new Display(bar, job.id(), shown, expires));
             }
         }
+    }
+
+    public void discoverBiome(Player player, String biome) {
+        if (!eligible(player) || !registry.rewards(JobRegistry.Activity.BIOME_DISCOVER, null, null, biome)) return;
+        var profile = profile(player);
+        if (!profile.biomes.add(biome)) return;
+        dirty.add(profile.id);
+        award(player, JobRegistry.Activity.BIOME_DISCOVER, null, null, 1, biome);
     }
 
     public static String format(double value) { return String.format(java.util.Locale.ROOT, "%,.1f", value); }
@@ -253,11 +310,29 @@ public final class JustJobsPlugin extends JavaPlugin {
     private void expireBars() {
         long now = System.currentTimeMillis();
         for (UUID id : new ArrayList<>(bars.keySet())) if (bars.get(id).expires() <= now || Bukkit.getPlayer(id) == null) hideBar(id);
+        for (UUID id : levelMessages.pendingPlayers()) {
+            var player = Bukkit.getPlayer(id);
+            if (player == null) levelMessages.forget(id);
+            else flushLevelMessages(player, now);
+        }
+    }
+    private void flushLevelMessages(Player player, long now) {
+        var profile = players.get(player.getUniqueId());
+        if (profile == null || !profile.notifications || !settings.getBoolean("feedback.level-up-chat", true)) {
+            levelMessages.forget(player.getUniqueId()); return;
+        }
+        levelMessages.flush(profile.id, now, settings.getLong("feedback.level-up-chat-interval-seconds", 10) * 1000,
+                notice -> player.sendMessage(Component.text("Reached level " + notice.level() + " " + notice.name(), NamedTextColor.GREEN)));
     }
     public void hideBar(UUID id) {
         var display = bars.remove(id);
         var player = Bukkit.getPlayer(id);
         if (display != null && player != null) player.hideBossBar(display.bar());
+    }
+    public void forgetFeedback(UUID id) {
+        hideBar(id);
+        barCooldowns.forget(id);
+        levelMessages.forget(id);
     }
 
     @FunctionalInterface interface StorageWork { void run() throws Exception; }
@@ -419,6 +494,13 @@ public final class JustJobsPlugin extends JavaPlugin {
     }
 
     @Override public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
+        if (args.length == 2 && args[0].equalsIgnoreCase("earnings") && sender.hasPermission("justjobs.admin")) {
+            String prefix = args[1].toLowerCase(java.util.Locale.ROOT);
+            var names = new java.util.TreeSet<String>(String.CASE_INSENSITIVE_ORDER);
+            for (var profile : players.values())
+                if (profile.name.toLowerCase(java.util.Locale.ROOT).startsWith(prefix)) names.add(profile.name);
+            return List.copyOf(names);
+        }
         if (args.length != 1) return List.of();
         var choices = new ArrayList<>(List.of("leaderboard", "notifications", "bossbar", "payday"));
         if (sender.hasPermission("justjobs.admin")) choices.addAll(List.of("reload", "earnings", "backup"));
@@ -447,6 +529,8 @@ public final class JustJobsPlugin extends JavaPlugin {
     @Override public void onDisable() {
         closing = true;
         scheduled.forEach(BukkitTask::cancel);
+        if (workstations != null) workstations.flush();
+        if (processing != null) processing.flush();
         if (activities != null) activities.resetTravel();
         for (UUID id : new ArrayList<>(bars.keySet())) hideBar(id);
         for (var player : Bukkit.getOnlinePlayers()) if (player.getOpenInventory().getTopInventory().getHolder() instanceof JobsMenu.Page) player.closeInventory();
@@ -472,6 +556,7 @@ public final class JustJobsPlugin extends JavaPlugin {
     public void toggleNotifications(Player player) {
         var profile = profile(player);
         profile.notifications = !profile.notifications;
+        if (!profile.notifications) levelMessages.forget(profile.id);
         dirty.add(profile.id);
         player.sendMessage("Job level-up messages " + (profile.notifications ? "enabled." : "disabled."));
         save();
@@ -483,6 +568,13 @@ public final class JustJobsPlugin extends JavaPlugin {
     public void togglePaydayChat(Player player) {
         var profile = profile(player); profile.paydayChat = !profile.paydayChat; dirty.add(profile.id);
         player.sendMessage("Payday messages " + (profile.paydayChat ? "enabled." : "disabled.")); save();
+    }
+    public void toggleTimeFormat(Player player) {
+        var profile = profile(player);
+        profile.timeFormat = timeFormat(profile) == 12 ? 24 : 12;
+        dirty.add(profile.id);
+        player.sendMessage("Job times now use a " + profile.timeFormat + "-hour clock.");
+        save();
     }
     public Component paydayMessage(BigDecimal amount, Map<String, BigDecimal> jobs) {
         Component hover = Component.text("Paycheck breakdown", NamedTextColor.GOLD);

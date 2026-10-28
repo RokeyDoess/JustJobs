@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.1.0 (2026-10-27)
+
+- Added Archaeology, Smithing, Cooking, and Brewing, bringing the default job count to seventeen. Archaeology covers brushing and natural decorated pots. Smithing covers gear crafting, upgrades, trims, anvil repairs, and ingot smelting.
+- Farming now includes shearing, hive harvesting, and taming. Building includes selected stonecutter outputs and banner weaving. Exploring includes first-time biome discoveries and map expansion or locking.
+- Added fourteen activity types for custom jobs, including villager curing. Taming, curing, and biome rewards keep their history across restarts; curing the same villager repeatedly doesn't pay.
+- Cooking and smelting credit whoever manually loaded each input quantity. Hopper-fed inputs don't pay; fuel and output collection don't affect credit. Brewing pays per manually loaded ingredient consumed, including potion improvements. Bottles may be automated. Unfinished batches keep their attribution through restarts and can finish while the player is offline.
+- Rebalanced XP requirements by job, with quicker starts for slower activities and a flat cost from level 50 onward. Cooking and ingot smelting earn 1 XP per item; walking earns 0.02 XP per block. Existing XP is kept, so displayed levels may change when the new curves apply. Old milestones aren't replayed.
+- Personal level-up messages are spaced ten seconds apart by default, combining rapid gains into the latest level reached per job. Cooking and Smithing have a 30-second boss-bar cooldown. Both intervals are configurable and don't delay earnings.
+- Added global milestone announcements every 50 job levels by default. The interval is configurable; bulk gains announce only the highest milestone crossed.
+- Reduced default money rewards: Hunting pays 0.05 per kill, Dueling 2.5, Enchanting 0.35 per level spent, Exploring 0.00075 per block, and Mining 0.006/0.03/0.08/0.35 by block group. The shared default cap is now 25 per job per payday.
+- Removed side glass borders and expanded menu pages to 27 entries. Existing job placement stays familiar; detailed leaderboards read left to right. Navigation and settings buttons stay in place.
+- Added player-name completion for `/jobs earnings`, including players with saved data who are offline.
+- Added a saved 12/24-hour clock choice in Settings. The server default is 12-hour time with AM/PM.
+- Recognized defaults upgrade automatically; custom curve points, XP rates, selectors, and unpaid money are kept. Back up plugin data and worlds before updating. The new database format requires a matching pre-update backup to roll back to 1.0.2.
+
 ## 1.0.2 (2026-10-26)
 
 - Job money caps now reset at each scheduled payday when paychecks are enabled. Immediate payouts keep rolling-hour caps. Reloads and restarts retain the current allowance; XP remains uncapped.

@@ -12,9 +12,15 @@ All jobs track automatically. Players don't need a command to start earning.
 
 All three feedback options start enabled and are saved per player. Click the comparator at the bottom left of the jobs or leaderboards menu to open **Settings**. The Back button returns to the page you came from.
 
+The clock in Settings switches your time displays between 12-hour (AM/PM) and 24-hour time. Your choice is saved; until you pick one, the server's default applies.
+
 “Next paycheck” stays on the jobs page. It shows the next distribution time, a countdown, and unpaid earnings; click it or reopen the menu to refresh. Hover over “Payday!” in a payment message to see the nonzero job amounts included in that deposit.
 
 Detailed leaderboards rank players by total job XP, reading left to right from the top row down.
+
+Jobs and leaderboards hold 27 entries per page, with glass along the top and bottom. Job selection keeps its center-first arrangement; the side slots provide overflow space when a page has more than 21 jobs.
+
+Job milestones are announced in global chat every 50 levels by default. The server owner can change or disable them in `config.yml`; personal chat toggles don't affect these announcements.
 
 ## Admin commands
 
@@ -23,6 +29,8 @@ Detailed leaderboards rank players by total job XP, reading left to right from t
 | `/jobs reload` | Reload both config files and apply every setting |
 | `/jobs earnings [player]` | Show earnings toward each job's cap and the shared unpaid balance |
 | `/jobs backup` | Save a checked copy of the job database in `plugins/JustJobs/backups/` |
+
+`/jobs earnings` completes matching player names as you type, including offline players with saved job data. Name suggestions are only available to admins.
 
 Reload applies payday timing, payout retries, saving, travel intervals, and diagnostic logging too. Changing payday timing keeps unpaid money. Invalid settings leave the previous settings running, with an error explaining what needs fixing.
 

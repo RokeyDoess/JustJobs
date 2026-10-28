@@ -128,7 +128,7 @@ public final class ActivityListener implements Listener {
     @EventHandler(priority = EventPriority.MONITOR)
     public void join(PlayerJoinEvent e) { plugin.profile(e.getPlayer()); travel.remove(e.getPlayer().getUniqueId()); }
     @EventHandler(priority = EventPriority.MONITOR)
-    public void quit(PlayerQuitEvent e) { clearSailing(e.getPlayer().getUniqueId()); plugin.hideBar(e.getPlayer().getUniqueId()); walking.remove(e.getPlayer().getUniqueId()); plugin.save(); }
+    public void quit(PlayerQuitEvent e) { clearSailing(e.getPlayer().getUniqueId()); plugin.forgetFeedback(e.getPlayer().getUniqueId()); walking.remove(e.getPlayer().getUniqueId()); plugin.save(); }
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void teleport(PlayerTeleportEvent e) { clearSailing(e.getPlayer().getUniqueId()); walking.remove(e.getPlayer().getUniqueId()); }
     @EventHandler(priority = EventPriority.MONITOR)

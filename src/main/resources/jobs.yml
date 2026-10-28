@@ -1,7 +1,8 @@
 # Add another entry under jobs to create a job; no code changes are needed.
 # Keep its ID stable: player progress is stored against that ID.
 # Activities: block-break, craft, block-place, crop-harvest, breed, fish, mob-kill,
-# player-kill, trade, travel, sail, enchant.
+# player-kill, trade, travel, sail, enchant, shear, beehive-harvest, tame, stonecut,
+# loom, brush, smith, anvil-repair, cure-villager, cartography, biome-discover, smelt, cook, brew.
 # A rule matches materials or entities, depending on its activity. '*' matches any.
 # Each rule's description names its reward unit in the menu; edit it to suit your selectors.
 # Material tags such as '#minecraft:logs' are supported for block-break rules.
@@ -12,21 +13,29 @@
 # Crop harvests count mature broken crops or a successful berry harvest, not planting.
 # Placement jobs share one reward per world location, even across players and block types.
 # Craft rewards are per output item actually crafted in a player's crafting grid.
-# Automatic crafters and stonecutters do not count. Avoid reversible recipes and recoloring loops.
+# Automatic crafters do not count. Stonecutters use stonecut. Avoid reversible recipes and recoloring loops.
 # Fish rules select caught item materials; breed rules select the offspring's entity type.
 # Matching rules add together, including rules in different jobs. Avoid unintended overlap.
 # Optional progression overrides: first-level-xp, early-level-xp, early-level,
 # plateau-xp, plateau-level, xp-multiplier (1 = normal, 2 = twice the XP required).
 # distance-per-reward batches travel XP and money; rule rates are still per block.
 # Optional hourly-income-limit overrides the shared money cap; 0 means unlimited.
+# boss-bar-cooldown-seconds limits how often this job opens its progress bar (0 = no cooldown).
 # natural-only defaults to true for block jobs. False allows grown/generated blocks;
 # hand-placed blocks are still excluded.
 # Caps reset each payday, or use a rolling hour when paydays are disabled.
-# Travel pays a smaller bonus. Each job's default cap is 100 per period.
-config-version: 9
+# Smith operations: upgrade, trim. Cartography operations: expand, lock, copy.
+# Biome discoveries use biomes: ['*'] or namespaced biome names; once per player across worlds.
+# Anvil repairs count the fraction of full durability restored, not clicks or XP levels.
+# Travel pays a smaller bonus. Each job's default cap is 25 per period.
+config-version: 13
 jobs:
   digging:
     name: Digging
+    progression:
+      first-level-xp: 40
+      early-level-xp: 150
+      plateau-xp: 1000
     icon: IRON_SHOVEL
     color: YELLOW
     description: Dig natural soil and sand.
@@ -40,6 +49,10 @@ jobs:
         money: '0.0085'
   mining:
     name: Mining
+    progression:
+      first-level-xp: 40
+      early-level-xp: 150
+      plateau-xp: 1500
     icon: IRON_PICKAXE
     color: BLUE
     description: Mine natural stone and ore.
@@ -50,7 +63,7 @@ jobs:
         description: stone block
         materials: [STONE, DEEPSLATE, GRANITE, DIORITE, ANDESITE, TUFF, CALCITE, NETHERRACK, BLACKSTONE, BASALT, END_STONE]
         xp: 1
-        money: '0.0075'
+        money: '0.006'
       - activity: block-break
         description: common ore (coal, copper, Nether ores)
         materials: [COAL_ORE, DEEPSLATE_COAL_ORE, COPPER_ORE, DEEPSLATE_COPPER_ORE, NETHER_GOLD_ORE, NETHER_QUARTZ_ORE]
@@ -60,14 +73,18 @@ jobs:
         description: iron, gold, redstone or lapis ore
         materials: [IRON_ORE, DEEPSLATE_IRON_ORE, GOLD_ORE, DEEPSLATE_GOLD_ORE, REDSTONE_ORE, DEEPSLATE_REDSTONE_ORE, LAPIS_ORE, DEEPSLATE_LAPIS_ORE]
         xp: 5
-        money: '0.10'
+        money: '0.08'
       - activity: block-break
         description: rare ore (diamond, emerald, ancient debris)
         materials: [DIAMOND_ORE, DEEPSLATE_DIAMOND_ORE, EMERALD_ORE, DEEPSLATE_EMERALD_ORE, ANCIENT_DEBRIS]
         xp: 5
-        money: '0.50'
+        money: '0.35'
   treefelling:
     name: Treefelling
+    progression:
+      first-level-xp: 12
+      early-level-xp: 60
+      plateau-xp: 400
     icon: IRON_AXE
     color: GREEN
     description: Chop natural and player-grown trees.
@@ -81,6 +98,10 @@ jobs:
         money: '0.075'
   hunting:
     name: Hunting
+    progression:
+      first-level-xp: 20
+      early-level-xp: 80
+      plateau-xp: 500
     icon: BOW
     color: RED
     description: Hunt hostile mobs.
@@ -90,7 +111,7 @@ jobs:
         description: hostile mob killed
         entities: ['#hostile']
         xp: 5
-        money: '0.1667'
+        money: '0.05'
   dueling:
     name: Dueling
     icon: IRON_SWORD
@@ -99,14 +120,20 @@ jobs:
     enabled: true
     progression:
       first-level-xp: 10
+      early-level-xp: 30
+      plateau-xp: 100
       xp-multiplier: 1
     rules:
       - activity: player-kill
         description: player kill
         xp: 10
-        money: '5'
+        money: '2.5'
   trading:
     name: Trading
+    progression:
+      first-level-xp: 10
+      early-level-xp: 30
+      plateau-xp: 150
     icon: EMERALD
     color: GREEN
     description: Spend emeralds with villagers.
@@ -120,16 +147,31 @@ jobs:
     name: Exploring
     icon: COMPASS
     color: PURPLE
-    description: Explore on foot.
+    description: Travel, discover biomes and work on maps.
     enabled: true
     distance-per-reward: 500
     rules:
       - activity: travel
         description: blocks walked
-        xp: 0.01
-        money: '0.001'
+        xp: 0.02
+        money: '0.00075'
+      - activity: biome-discover
+        description: biome discovered for the first time
+        biomes: ['*']
+        xp: 10
+        money: '0.25'
+      - activity: cartography
+        description: map expanded or locked
+        materials: [FILLED_MAP]
+        operations: [expand, lock]
+        xp: 2
+        money: '0.05'
   sailing:
     name: Sailing
+    progression:
+      first-level-xp: 5
+      early-level-xp: 25
+      plateau-xp: 100
     icon: OAK_BOAT
     color: BLUE
     description: Travel by boat on water.
@@ -142,6 +184,10 @@ jobs:
         money: '0.0005'
   enchanting:
     name: Enchanting
+    progression:
+      first-level-xp: 25
+      early-level-xp: 75
+      plateau-xp: 250
     icon: ENCHANTING_TABLE
     color: PINK
     description: Enchant items at an enchanting table.
@@ -150,12 +196,16 @@ jobs:
       - activity: enchant
         description: enchanting level spent
         xp: 10
-        money: '0.50'
+        money: '0.35'
   farming:
     name: Farming
+    progression:
+      first-level-xp: 20
+      early-level-xp: 80
+      plateau-xp: 600
     icon: IRON_HOE
     color: GREEN
-    description: Harvest mature crops and breed animals.
+    description: Harvest crops, keep bees and care for animals.
     enabled: true
     rules:
       - activity: crop-harvest
@@ -168,8 +218,27 @@ jobs:
         entities: ['*']
         xp: 5
         money: '0.50'
+      - activity: shear
+        description: sheep sheared
+        entities: [SHEEP]
+        xp: 1
+        money: '0.025'
+      - activity: beehive-harvest
+        description: full hive harvested by hand
+        materials: [HONEY_BOTTLE, HONEYCOMB]
+        xp: 2
+        money: '0.05'
+      - activity: tame
+        description: animal tamed for the first time
+        entities: ['*']
+        xp: 5
+        money: '0.25'
   fishing:
     name: Fishing
+    progression:
+      first-level-xp: 10
+      early-level-xp: 30
+      plateau-xp: 150
     icon: FISHING_ROD
     color: BLUE
     description: Catch fish and other items with a fishing rod.
@@ -182,6 +251,10 @@ jobs:
         money: '0.25'
   engineering:
     name: Engineering
+    progression:
+      first-level-xp: 15
+      early-level-xp: 60
+      plateau-xp: 300
     icon: PISTON
     color: RED
     description: Craft redstone components and railway blocks.
@@ -206,7 +279,7 @@ jobs:
     name: Building
     icon: BRICKS
     color: YELLOW
-    description: Craft brickwork, bookshelves, flower pots and jack o'lanterns.
+    description: Craft building materials, cut stone and weave banners.
     enabled: true
     rules:
       - activity: craft
@@ -214,3 +287,134 @@ jobs:
         materials: [BRICKS, STONE_BRICKS, MUD_BRICKS, NETHER_BRICKS, RED_NETHER_BRICKS, END_STONE_BRICKS, PURPUR_BLOCK, DEEPSLATE_TILES, TUFF_BRICKS, POLISHED_BLACKSTONE_BRICKS, BOOKSHELF, FLOWER_POT, JACK_O_LANTERN]
         xp: 1
         money: '0.015'
+      - activity: stonecut
+        description: finished brick slab, stair or wall
+        materials: [STONE_BRICK_SLAB, STONE_BRICK_STAIRS, STONE_BRICK_WALL, BRICK_SLAB, BRICK_STAIRS, BRICK_WALL, MUD_BRICK_SLAB, MUD_BRICK_STAIRS, MUD_BRICK_WALL, NETHER_BRICK_SLAB, NETHER_BRICK_STAIRS, NETHER_BRICK_WALL, RED_NETHER_BRICK_SLAB, RED_NETHER_BRICK_STAIRS, RED_NETHER_BRICK_WALL, END_STONE_BRICK_SLAB, END_STONE_BRICK_STAIRS, END_STONE_BRICK_WALL, DEEPSLATE_TILE_SLAB, DEEPSLATE_TILE_STAIRS, DEEPSLATE_TILE_WALL, TUFF_BRICK_SLAB, TUFF_BRICK_STAIRS, TUFF_BRICK_WALL, POLISHED_BLACKSTONE_BRICK_SLAB, POLISHED_BLACKSTONE_BRICK_STAIRS, POLISHED_BLACKSTONE_BRICK_WALL]
+        xp: 0.5
+        money: '0.005'
+      - activity: loom
+        description: banner pattern applied with dye
+        materials: ['#minecraft:banners']
+        xp: 1
+        money: '0.025'
+  archaeology:
+    name: Archaeology
+    progression:
+      first-level-xp: 5
+      early-level-xp: 20
+      plateau-xp: 50
+    icon: BRUSH
+    color: YELLOW
+    description: Brush buried finds and break natural decorated pots.
+    enabled: true
+    natural-only: true
+    rules:
+      - activity: brush
+        description: completed natural excavation
+        materials: [SUSPICIOUS_SAND, SUSPICIOUS_GRAVEL]
+        xp: 5
+        money: '0.15'
+      - activity: block-break
+        description: natural decorated pot broken
+        materials: [DECORATED_POT]
+        xp: 2
+        money: '0.05'
+  smithing:
+    name: Smithing
+    icon: ANVIL
+    color: BLUE
+    description: Make and repair gear, and smelt ingots.
+    enabled: true
+    boss-bar-cooldown-seconds: 30
+    rules:
+      - activity: craft
+        description: basic armor or weapon crafted
+        materials: [WOODEN_SWORD, WOODEN_AXE, WOODEN_SPEAR, STONE_SWORD, STONE_AXE, STONE_SPEAR, COPPER_SWORD, COPPER_AXE, COPPER_SPEAR, COPPER_HELMET, COPPER_CHESTPLATE, COPPER_LEGGINGS, COPPER_BOOTS, LEATHER_HELMET, LEATHER_CHESTPLATE, LEATHER_LEGGINGS, LEATHER_BOOTS, LEATHER_HORSE_ARMOR, BOW]
+        xp: 1
+        money: '0.025'
+      - activity: craft
+        description: iron or gold armor, weapon, shield or crossbow crafted
+        materials: [IRON_SWORD, IRON_AXE, IRON_SPEAR, IRON_HELMET, IRON_CHESTPLATE, IRON_LEGGINGS, IRON_BOOTS, GOLDEN_SWORD, GOLDEN_AXE, GOLDEN_SPEAR, GOLDEN_HELMET, GOLDEN_CHESTPLATE, GOLDEN_LEGGINGS, GOLDEN_BOOTS, SHIELD, CROSSBOW]
+        xp: 2
+        money: '0.05'
+      - activity: craft
+        description: diamond armor, weapon or mace crafted
+        materials: [DIAMOND_SWORD, DIAMOND_AXE, DIAMOND_SPEAR, DIAMOND_HELMET, DIAMOND_CHESTPLATE, DIAMOND_LEGGINGS, DIAMOND_BOOTS, MACE]
+        xp: 5
+        money: '0.10'
+      - activity: smith
+        description: equipment upgrade
+        materials: ['*']
+        operations: [upgrade]
+        xp: 10
+        money: '0.25'
+      - activity: smith
+        description: armor trim applied
+        materials: ['*']
+        operations: [trim]
+        xp: 3
+        money: '0.05'
+      - activity: anvil-repair
+        description: full item durability repaired (partial repairs scale)
+        materials: ['*']
+        xp: 5
+        money: '0.25'
+      - activity: smelt
+        description: iron, copper or gold ingot smelted
+        materials: [IRON_INGOT, COPPER_INGOT, GOLD_INGOT]
+        xp: 1
+        money: '0.01'
+  cooking:
+    name: Cooking
+    icon: COOKED_BEEF
+    color: YELLOW
+    description: Cook meals and craft food.
+    enabled: true
+    boss-bar-cooldown-seconds: 30
+    rules:
+      - activity: cook
+        description: cooked meat, fish or baked potato
+        materials: [COOKED_BEEF, COOKED_PORKCHOP, COOKED_CHICKEN, COOKED_MUTTON, COOKED_RABBIT, COOKED_COD, COOKED_SALMON, BAKED_POTATO]
+        xp: 1
+        money: '0.005'
+      - activity: craft
+        description: bread, soup or mushroom stew crafted
+        materials: [BREAD, BEETROOT_SOUP, MUSHROOM_STEW, SUSPICIOUS_STEW]
+        xp: 1
+        money: '0.01'
+      - activity: craft
+        description: cookie crafted
+        materials: [COOKIE]
+        xp: 0.25
+        money: '0.0025'
+      - activity: craft
+        description: cake, pie, rabbit stew or golden food crafted
+        materials: [CAKE, PUMPKIN_PIE, RABBIT_STEW, GOLDEN_APPLE, GOLDEN_CARROT]
+        xp: 2
+        money: '0.05'
+  brewing:
+    name: Brewing
+    progression:
+      first-level-xp: 10
+      early-level-xp: 30
+      plateau-xp: 150
+    icon: BREWING_STAND
+    color: PINK
+    description: Make and improve potions with ingredients you load by hand.
+    enabled: true
+    rules:
+      - activity: brew
+        description: wart, sugar, fermented eye, stone, redstone, glowstone or gunpowder consumed
+        materials: [NETHER_WART, SUGAR, FERMENTED_SPIDER_EYE, STONE, REDSTONE, GLOWSTONE_DUST, GUNPOWDER]
+        xp: 3
+        money: '0.025'
+      - activity: brew
+        description: effect ingredient consumed (blaze powder, magma cream, golden carrot, etc.)
+        materials: [BLAZE_POWDER, MAGMA_CREAM, SPIDER_EYE, GOLDEN_CARROT, GLISTERING_MELON_SLICE, PUFFERFISH, RABBIT_FOOT, BREEZE_ROD, SLIME_BLOCK, COBWEB]
+        xp: 5
+        money: '0.05'
+      - activity: brew
+        description: ghast tear, phantom membrane, turtle shell or dragon's breath consumed
+        materials: [GHAST_TEAR, PHANTOM_MEMBRANE, TURTLE_HELMET, DRAGON_BREATH]
+        xp: 10
+        money: '0.10'
