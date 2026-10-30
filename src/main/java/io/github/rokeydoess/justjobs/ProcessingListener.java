@@ -26,16 +26,64 @@ import java.io.*;
 import java.util.*;
 import java.util.function.BooleanSupplier;
 
-/** Attribution belongs to manually inserted input quantities, never the workstation or its fuel. */
+/** Direct contributors take priority; unassigned inputs credit the workstation owner. */
 public final class ProcessingListener implements Listener {
     private final JustJobsPlugin plugin;
     private final NamespacedKey key;
+    private final NamespacedKey ownerKey, eligibleOwnerKey;
     private final Map<Block, Runnable> pending = new HashMap<>();
     private record Target(Block block, Material type, List<ItemStack> inputs) { }
     private record Stock(ItemStack item, InputBatch batch) { }
 
     public ProcessingListener(JustJobsPlugin plugin) {
         this.plugin = plugin; key = new NamespacedKey(plugin, "processing_inputs_v1");
+        ownerKey = new NamespacedKey(plugin, "processing_owner");
+        eligibleOwnerKey = new NamespacedKey(plugin, "processing_owner_eligible");
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void open(InventoryOpenEvent event) {
+        if (!(event.getPlayer() instanceof Player player)) return;
+        var block = block(event.getInventory());
+        if (block == null) return;
+        settle(block);
+        claim(block, player);
+    }
+
+    private void claim(Block block, Player player) {
+        if (!(block.getState(false) instanceof TileState state)) return;
+        UUID owner = owner(state);
+        if (owner == null && plugin.eligible(player)) {
+            assign(state, player);
+            player.sendMessage("You now own this " + block.getType().name().toLowerCase(Locale.ROOT).replace('_', ' ') + " for job earnings.");
+        } else if (player.getUniqueId().equals(owner)) updateEligibility(state, plugin.eligible(player));
+    }
+    private void assign(TileState state, Player player) {
+        plugin.profile(player);
+        state.getPersistentDataContainer().set(ownerKey, PersistentDataType.STRING, player.getUniqueId().toString());
+        updateEligibility(state, plugin.eligible(player));
+        state.update(false, false);
+    }
+    private UUID owner(TileState state) {
+        String value = state.getPersistentDataContainer().get(ownerKey, PersistentDataType.STRING);
+        try { return value == null ? null : UUID.fromString(value); }
+        catch (IllegalArgumentException invalid) { return null; }
+    }
+    private void updateEligibility(TileState state, boolean eligible) {
+        byte value = (byte) (eligible ? 1 : 0);
+        if (state.getPersistentDataContainer().getOrDefault(eligibleOwnerKey, PersistentDataType.BYTE, (byte) -1) != value) {
+            state.getPersistentDataContainer().set(eligibleOwnerKey, PersistentDataType.BYTE, value); state.update(false, false);
+        }
+    }
+    private UUID fallbackOwner(Block block) {
+        if (!(block.getState(false) instanceof TileState state)) return null;
+        UUID owner = owner(state);
+        if (owner == null) return null;
+        var player = Bukkit.getPlayer(owner);
+        boolean eligible = player == null ? state.getPersistentDataContainer().getOrDefault(eligibleOwnerKey, PersistentDataType.BYTE, (byte) 0) == 1
+                : plugin.eligible(player);
+        if (player != null) updateEligibility(state, eligible);
+        return eligible ? owner : null;
     }
 
     @EventHandler(priority = EventPriority.LOWEST)
@@ -85,7 +133,11 @@ public final class ProcessingListener implements Listener {
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void broken(BlockBreakEvent event) { clear(event.getBlock()); }
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
-    public void placed(BlockPlaceEvent event) { clear(event.getBlockPlaced()); }
+    public void placed(BlockPlaceEvent event) {
+        if (!event.canBuild()) return;
+        var block = event.getBlockPlaced(); clear(block);
+        if (target(block) != null && block.getState(false) instanceof TileState state) assign(state, event.getPlayer());
+    }
     @EventHandler(priority = EventPriority.LOWEST)
     public void unload(ChunkUnloadEvent event) {
         for (var block : List.copyOf(pending.keySet()))
@@ -110,15 +162,16 @@ public final class ProcessingListener implements Listener {
         }
         var stocks = read(before);
         write(before, stocks);
-        if (!owned(stocks.get(slot).batch())) return;
+        UUID fallback = fallbackOwner(before.block());
+        if (!tracked(stocks.get(slot).batch()) && fallback == null) return;
         int selected = slot;
         later(before.block(), () -> {
             var after = target(before.block());
             if (after == null || after.type() != before.type()) return;
             boolean consumed = !event.isCancelled() && removed(before.inputs().get(selected), after.inputs().get(selected)) == 1;
-            UUID owner = consumed ? stocks.get(selected).batch().consume() : null;
+            UUID owner = consumed ? stocks.get(selected).batch().consume(fallback) : null;
             if (!consumed && !event.isCancelled()) stocks.set(selected, new Stock(null, new InputBatch()));
-            align(stocks, after, null, null, -1); write(after, stocks);
+            align(stocks, after, null, null, -1, true); write(after, stocks);
             var result = event.getResult();
             if (owner != null && !empty(result)) plugin.awardProcessed(owner, after.block().getWorld(), result.getType().isEdible()
                     ? JobRegistry.Activity.COOK : JobRegistry.Activity.SMELT, result.getType(), result.getAmount());
@@ -132,7 +185,8 @@ public final class ProcessingListener implements Listener {
         if (before == null || empty(before.inputs().getFirst())) return;
         var stocks = read(before);
         write(before, stocks);
-        if (!owned(stocks.getFirst().batch())) return;
+        UUID fallback = fallbackOwner(before.block());
+        if (!tracked(stocks.getFirst().batch()) && fallback == null) return;
         var bottles = new ArrayList<ItemStack>();
         for (int i = 0; i < 3; i++) bottles.add(copy(event.getContents().getItem(i)));
         later(before.block(), () -> {
@@ -144,9 +198,9 @@ public final class ProcessingListener implements Listener {
                 if (!empty(result) && !similar(result, bottles.get(i))) changed = true;
             }
             boolean consumed = !event.isCancelled() && changed && removed(before.inputs().getFirst(), after.inputs().getFirst()) == 1;
-            UUID owner = consumed ? stocks.getFirst().batch().consume() : null;
+            UUID owner = consumed ? stocks.getFirst().batch().consume(fallback) : null;
             if (!consumed && !event.isCancelled()) stocks.set(0, new Stock(null, new InputBatch()));
-            align(stocks, after, null, null, -1); write(after, stocks);
+            align(stocks, after, null, null, -1, true); write(after, stocks);
             if (owner != null) plugin.awardProcessed(owner, after.block().getWorld(), JobRegistry.Activity.BREW, before.inputs().getFirst().getType(), 1);
         });
     }
@@ -154,6 +208,7 @@ public final class ProcessingListener implements Listener {
     private void change(Block block, Player player, ItemStack source, int replace, BooleanSupplier valid) {
         if (block == null) return;
         settle(block);
+        if (player == null && (!(block.getState(false) instanceof TileState state) || !state.getPersistentDataContainer().has(key))) return;
         var before = target(block);
         if (before == null) return;
         var stocks = read(before);
@@ -164,7 +219,10 @@ public final class ProcessingListener implements Listener {
             var after = target(block);
             if (after == null || after.type() != before.type()) return;
             boolean accepted = valid.getAsBoolean();
-            align(stocks, after, accepted ? owner : null, accepted ? incoming : null, accepted ? replaced : -1);
+            if (accepted && owner != null && block.getState(false) instanceof Campfire
+                    && java.util.stream.IntStream.range(0, before.inputs().size()).anyMatch(i -> similar(after.inputs().get(i), incoming)
+                    && count(after.inputs().get(i)) > count(before.inputs().get(i)))) claim(block, player);
+            align(stocks, after, accepted ? owner : null, accepted ? incoming : null, accepted ? replaced : -1, player == null);
             write(after, stocks);
         });
     }
@@ -176,10 +234,10 @@ public final class ProcessingListener implements Listener {
     public void flush() { for (var block : List.copyOf(pending.keySet())) settle(block); }
 
     private Block block(Inventory inventory) {
-        return inventory.getHolder(false) instanceof org.bukkit.block.BlockState state && switch (inventory.getType()) {
-            case FURNACE, SMOKER, BLAST_FURNACE, BREWING -> true;
-            default -> false;
-        } ? state.getBlock() : null;
+        return switch (inventory.getType()) {
+            case FURNACE, SMOKER, BLAST_FURNACE, BREWING -> inventory.getHolder(false) instanceof org.bukkit.block.BlockState state ? state.getBlock() : null;
+            default -> null;
+        };
     }
     private Target target(Block block) {
         if (!block.getWorld().isChunkLoaded(block.getX() >> 4, block.getZ() >> 4)) return null;
@@ -195,7 +253,8 @@ public final class ProcessingListener implements Listener {
         var stocks = new ArrayList<Stock>();
         byte[] encoded = ((TileState) target.block().getState(false)).getPersistentDataContainer().get(key, PersistentDataType.BYTE_ARRAY);
         if (encoded != null) try (var input = new DataInputStream(new ByteArrayInputStream(encoded))) {
-            if (input.readInt() != 1 || !input.readUTF().equals(target.type().name()) || input.readInt() != target.inputs().size()) throw new IOException("Unknown input attribution format");
+            int version = input.readInt();
+            if (version < 1 || version > 2 || !input.readUTF().equals(target.type().name()) || input.readInt() != target.inputs().size()) throw new IOException("Unknown input attribution format");
             for (int i = 0; i < target.inputs().size(); i++) {
                 int length = input.readInt();
                 if (length < 0 || length > 1_048_576 || length > input.available()) throw new IOException("Invalid input item");
@@ -206,8 +265,9 @@ public final class ProcessingListener implements Listener {
                 for (int p = 0; p < parts; p++) {
                     UUID owner = input.readBoolean() ? new UUID(input.readLong(), input.readLong()) : null;
                     int amount = input.readInt();
+                    boolean fallbackAllowed = version == 1 || input.readBoolean();
                     if (amount <= 0 || amount > 1_000_000 || batch.size() > 1_000_000 - amount) throw new IOException("Invalid input quantity");
-                    batch.add(owner, amount);
+                    batch.add(owner, amount, fallbackAllowed);
                 }
                 stocks.add(new Stock(item, batch));
             }
@@ -217,23 +277,23 @@ public final class ProcessingListener implements Listener {
             plugin.getLogger().warning("Discarded unreadable processing attribution at " + target.block().getLocation() + ": " + failure.getMessage());
         }
         if (stocks.isEmpty()) for (int i = 0; i < target.inputs().size(); i++) stocks.add(new Stock(null, new InputBatch()));
-        align(stocks, target, null, null, -1);
+        align(stocks, target, null, null, -1, true);
         return stocks;
     }
-    private void align(List<Stock> stocks, Target target, UUID owner, ItemStack incoming, int replaced) {
-        int available = owner == null ? 0 : count(incoming);
+    private void align(List<Stock> stocks, Target target, UUID owner, ItemStack incoming, int replaced, boolean fallbackAllowed) {
+        int available = count(incoming);
         for (int i = 0; i < stocks.size(); i++) {
             var current = target.inputs().get(i); var previous = stocks.get(i);
-            UUID inserted = similar(current, incoming) ? owner : null;
+            boolean inserted = similar(current, incoming);
             if (i == replaced && similar(current, incoming) || !similar(previous.item(), current)) {
                 var batch = new InputBatch();
-                int credited = inserted == null ? 0 : Math.min(count(current), available);
-                batch.add(inserted, credited); batch.add(null, count(current) - credited); available -= credited;
+                int credited = !inserted ? 0 : Math.min(count(current), available);
+                batch.add(owner, credited, fallbackAllowed); batch.add(null, count(current) - credited); available -= credited;
                 stocks.set(i, new Stock(copy(current), batch));
             } else {
                 int added = count(current) - previous.batch().size();
-                int credited = inserted == null ? 0 : Math.min(Math.max(0, added), available);
-                previous.batch().add(inserted, credited); available -= credited;
+                int credited = !inserted ? 0 : Math.min(Math.max(0, added), available);
+                previous.batch().add(owner, credited, fallbackAllowed); available -= credited;
                 previous.batch().resize(count(current), null);
             }
         }
@@ -242,12 +302,12 @@ public final class ProcessingListener implements Listener {
         // A live state preserves the inventory objects vanilla is currently consuming.
         if (!(target.block().getState(false) instanceof TileState state) || state.getType() != target.type()) return;
         var data = state.getPersistentDataContainer();
-        if (stocks.stream().noneMatch(stock -> owned(stock.batch()))) {
+        if (stocks.stream().noneMatch(stock -> tracked(stock.batch()))) {
             if (data.has(key)) { data.remove(key); state.update(false, false); }
             return;
         }
         try (var bytes = new ByteArrayOutputStream(); var output = new DataOutputStream(bytes)) {
-            output.writeInt(1); output.writeUTF(target.type().name()); output.writeInt(stocks.size());
+            output.writeInt(2); output.writeUTF(target.type().name()); output.writeInt(stocks.size());
             for (var stock : stocks) {
                 var item = copy(stock.item()); if (!empty(item)) item.setAmount(1);
                 byte[] serialized = empty(item) ? new byte[0] : item.serializeAsBytes();
@@ -256,6 +316,7 @@ public final class ProcessingListener implements Listener {
                     output.writeBoolean(part.owner() != null);
                     if (part.owner() != null) { output.writeLong(part.owner().getMostSignificantBits()); output.writeLong(part.owner().getLeastSignificantBits()); }
                     output.writeInt(part.amount());
+                    output.writeBoolean(part.fallbackAllowed());
                 }
             }
             output.flush(); data.set(key, PersistentDataType.BYTE_ARRAY, bytes.toByteArray()); state.update(false, false);
@@ -263,11 +324,14 @@ public final class ProcessingListener implements Listener {
     }
     private void clear(Block block) {
         settle(block);
-        if (block.getState(false) instanceof TileState state && state.getPersistentDataContainer().has(key)) {
-            state.getPersistentDataContainer().remove(key); state.update(false, false);
+        if (block.getState(false) instanceof TileState state) {
+            var data = state.getPersistentDataContainer();
+            if (data.has(key) || data.has(ownerKey) || data.has(eligibleOwnerKey)) {
+                data.remove(key); data.remove(ownerKey); data.remove(eligibleOwnerKey); state.update(false, false);
+            }
         }
     }
-    private static boolean owned(InputBatch batch) { return batch.parts().stream().anyMatch(part -> part.owner() != null); }
+    private static boolean tracked(InputBatch batch) { return batch.parts().stream().anyMatch(part -> part.owner() != null || !part.fallbackAllowed()); }
     private static int removed(ItemStack before, ItemStack after) { return count(before) - (similar(before, after) ? count(after) : 0); }
     private static boolean empty(ItemStack item) { return item == null || item.isEmpty(); }
     private static int count(ItemStack item) { return empty(item) ? 0 : item.getAmount(); }

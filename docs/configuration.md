@@ -80,9 +80,9 @@ Keep the ID (`snow_digging` here) stable to preserve progress. IDs use lowercase
 | `cure-villager` | The first cure of a villager, credited to its online curing player; select `entities: [VILLAGER]`. Available for custom jobs |
 | `cartography` | A completed map operation; select `materials: [FILLED_MAP]` and optionally `operations: [expand, lock, copy]` |
 | `biome-discover` | First visit to a biome per player; select `biomes: ['*']` or names such as `minecraft:forest` |
-| `smelt` | Nonfood output from a furnace or blast furnace, credited to whoever manually loaded its input; select output `materials` |
+| `smelt` | Nonfood output from a furnace or blast furnace; manual inputs pay their contributor, unassigned inputs pay the block owner; select output `materials` |
 | `cook` | Food cooked in a furnace, smoker or campfire; select output `materials` |
-| `brew` | One manually loaded potion ingredient consumed, regardless of bottle count; select ingredient `materials` |
+| `brew` | One potion ingredient consumed, regardless of bottle count; manual inputs pay their contributor, unassigned inputs pay the block owner; select ingredient `materials` |
 
 Material rules use names such as `[DIRT, SAND]`; block tags such as `'#minecraft:logs'` are also supported. Fishing uses caught item names, such as `[COD, SALMON]`. Animal and mob rules use `entities`, such as `[COW, SHEEP]`. `'#hostile'` selects hostile mobs; `'*'` matches everything for that selector. Matching rules add together, including across jobs.
 
@@ -92,11 +92,15 @@ Smithing upgrades and trims can have separate rates using `operations`. Cartogra
 
 Biome discoveries start being tracked after this update. Each biome pays once per player across all worlds and jobs, and the history survives restarts. Walking or riding into a biome counts; teleport events don't. Taming history stays with the animal. Curing history follows villagers through reinfection, so curing the same villager repeatedly doesn't pay.
 
-For smelting and cooking, each manually loaded quantity keeps its own player attribution. Inputs process in insertion order; withdrawals remove the newest quantities first. Campfires track each food slot separately. Fuel and whoever collects the output don't affect credit. Cooking and nonfood smelting are separate activities, so one result doesn't pay both.
+For smelting and cooking, each manually loaded quantity keeps its contributor. Unassigned inputs, including hopper-fed ingredients, pay the workstation owner. Inputs process in insertion order; withdrawals remove the newest quantities first. Campfires track each food slot separately. Fuel and whoever collects the output don't affect credit. Cooking and nonfood smelting are separate activities, so one result doesn't pay both.
+
+The player who places a furnace, smoker, blast furnace, brewing stand, or campfire owns it. For existing blocks with no recorded owner, the first eligible player to open one claims it and gets a short confirmation. Existing campfires use the first successful food insertion instead. Opening an owned workstation never transfers it. Breaking the block clears its ownership; a replacement belongs to its new placer.
 
 Brewing tracks only the consumed recipe ingredient. One ingredient earns one reward whether it changes one bottle or three. Bottle loading can be automated, and potion enhancements count. Blaze powder used as fuel doesn't pay; blaze powder used as a potion ingredient does.
 
-Hopper-fed raw items and brewing ingredients don't pay. Hoppers may supply fuel or collect output. Inputs already inside a workstation when tracking starts are uncredited. Loading must happen while the player is eligible to earn; their batches can finish after logout and survive restarts. Rewards enter the normal cap and paycheck when processing completes. Unknown inventory changes aren't assigned to the last player who used the block.
+Loading a feeder chest doesn't attach a contributor to its ingredients: hopper-fed inputs use the processing block's owner. Fully automatic farms can therefore earn for that owner too. Inputs already inside a workstation can use owner fallback after it is claimed. With neither a contributor nor an owner, processing earns nothing.
+
+Direct inputs must be loaded while the player is eligible to earn. Known creative-mode or permission-denied inputs don't pay anyone, including through owner fallback. Owners who are online must also be eligible; offline owner fallback uses their last recorded eligibility at placement, opening, or processing. Ownership and contributor batches survive restarts, and processing can earn while their players are offline. Rewards enter the usual paycheck and per-player job cap on completion. Multiple machines don't create separate allowances, and XP stays uncapped.
 
 ## Money and limits
 
@@ -208,7 +212,7 @@ Tracking starts when JustJobs is installed. Older placed blocks and changes made
 
 If you add crafting rules, avoid recipes that can be reversed or recolored repeatedly. The legacy `block-place` activity can still be farmed by moving materials to fresh locations; no default job uses it.
 
-Progress saves every 30 seconds and on normal shutdown. A crash can lose unsaved progress. Back up plugin data, worlds, and economy data together while stopped: block tracking and unfinished processing attribution live in world chunks, and paid money lives with your economy provider. The database backup alone doesn't include workstation inputs.
+Progress saves every 30 seconds and on normal shutdown. A crash can lose unsaved progress. Back up plugin data, worlds, and economy data together while stopped: block tracking, workstation ownership, and unfinished processing attribution live in world chunks, and paid money lives with your economy provider. The database backup alone doesn't include workstation inputs or owners.
 
 Older configs upgrade once. Recognized default rates and the former shared cap of 100 move to the new defaults; other custom values and saved progress stay. New default jobs are added if their IDs aren't already used. Existing rules for a new activity take precedence over adding its defaults. The processing update adds Cooking, Brewing, and Smithing's ingot rule. The popup update adds the 30-second Cooking and Smithing cooldowns where unset, plus Archaeology's pot rule if it has no block-breaking rules already. Review custom Engineering or Building selectors when upgrading from placement rewards.
 

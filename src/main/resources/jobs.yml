@@ -28,7 +28,8 @@
 # Biome discoveries use biomes: ['*'] or namespaced biome names; once per player across worlds.
 # Anvil repairs count the fraction of full durability restored, not clicks or XP levels.
 # Travel pays a smaller bonus. Each job's default cap is 25 per period.
-config-version: 13
+# Processing pays the direct ingredient contributor, or the block owner for unassigned inputs.
+config-version: 14
 jobs:
   digging:
     name: Digging
@@ -400,7 +401,7 @@ jobs:
       plateau-xp: 150
     icon: BREWING_STAND
     color: PINK
-    description: Make and improve potions with ingredients you load by hand.
+    description: Make and improve potions.
     enabled: true
     rules:
       - activity: brew

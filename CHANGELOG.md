@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.1.1 (2026-10-29)
+
+- Manually loaded ingredients still pay the player who added them. Hopper-fed and other unassigned ingredients now pay the workstation owner, including fully automatic setups.
+- Placing a workstation records its owner. The first eligible player to open an unowned workstation claims it; later visitors don't change ownership. Existing campfires are claimed on their first successful food insertion.
+- Ownership and ingredient credit survive restarts. Breaking and replacing a workstation clears the old ownership. All of an owner's machines share the normal job money cap; XP remains uncapped.
+- Inputs loaded by players who can't earn rewards don't pay the owner instead.
+
 ## 1.1.0 (2026-10-27)
 
 - Added Archaeology, Smithing, Cooking, and Brewing, bringing the default job count to seventeen. Archaeology covers brushing and natural decorated pots. Smithing covers gear crafting, upgrades, trims, anvil repairs, and ingot smelting.

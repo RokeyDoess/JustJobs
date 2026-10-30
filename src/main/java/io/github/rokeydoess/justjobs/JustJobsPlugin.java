@@ -222,7 +222,8 @@ public final class JustJobsPlugin extends JavaPlugin {
     public void awardProcessed(UUID owner, org.bukkit.World world, JobRegistry.Activity activity, Material material, double units) {
         if (storageFailed || !Double.isFinite(units) || units <= 0 || settings.getStringList("rules.excluded-worlds").contains(world.getName())) return;
         var profile = players.get(owner);
-        if (profile != null) award(profile, Bukkit.getPlayer(owner), activity, material, null, units, true, null);
+        var player = Bukkit.getPlayer(owner);
+        if (profile != null && (player == null || eligible(player))) award(profile, player, activity, material, null, units, true, null);
     }
     private void award(PlayerProfile profile, Player player, JobRegistry.Activity activity, Material material, EntityType entity, double units, boolean naturalBlock, String detail) {
         long now = System.currentTimeMillis();

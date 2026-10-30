@@ -27,7 +27,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 
 /** Runs native processing and hopper transfers against real block inventories. */
-public final class ProcessingChecks extends CraftingChecks {
+public class ProcessingChecks extends CraftingChecks {
     record Bench(Table actor, Block block, Object entity, Object menu, Inventory inventory, InventoryView view) { }
     ProcessingListener processing;
     int nextBlock;

@@ -15,6 +15,8 @@ Dig a tunnel, chop some trees, catch a fish. JustJobs rewards everyday survival 
 
 Seventeen jobs, from Mining and Farming to Cooking, Brewing, Archaeology, and Smithing. Make gear, harvest honey, cook a meal, or find a new biome—there's more than one way to earn.
 
+Load a furnace yourself and the earnings are yours. Hopper-fed ingredients pay the workstation owner, so running a public smelter or brewery can earn something too.
+
 Paychecks arrive automatically every real-time hour, including for offline players. Hover over “Payday!” in chat to see what each job paid. Whole-number payouts carry small remainders forward, so no earnings go to waste. Immediate payouts are available too.
 
 All jobs live in one `jobs.yml`. Change rewards, adjust leveling, disable jobs, or add your own. Each job has a configurable money cap that resets at payday; XP keeps counting after it.

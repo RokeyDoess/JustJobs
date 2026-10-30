@@ -34,8 +34,8 @@ final class ConfigUpgrade {
         return jobs(yaml, Progression.defaults(), new Progression(25, 150, 2500, 10, 50, 1));
     }
     static boolean jobs(YamlConfiguration yaml, Progression shared, Progression former) {
-        long version = ConfigValues.integer(yaml, "config-version", 0, 0, 13);
-        if (version == 13) return false;
+        long version = ConfigValues.integer(yaml, "config-version", 0, 0, 14);
+        if (version == 14) return false;
         if (version < 2) upgradeOriginalJobs(yaml, version);
         var jobs = yaml.getConfigurationSection("jobs");
         if (jobs != null && !jobs.getKeys(false).isEmpty()) {
@@ -65,9 +65,11 @@ final class ConfigUpgrade {
             if (version < 10) expandJobs(yaml, defaults);
             if (version < 11) addProcessingJobs(yaml, defaults);
             if (version < 12) addFeedbackAndPots(yaml, defaults);
-            retuneXp(yaml, defaults, shared, former);
+            if (version < 13) retuneXp(yaml, defaults, shared, former);
+            if ("Make and improve potions with ingredients you load by hand.".equals(yaml.getString("jobs.brewing.description")))
+                yaml.set("jobs.brewing.description", defaults.getString("jobs.brewing.description"));
         }
-        yaml.set("config-version", 13);
+        yaml.set("config-version", 14);
         return true;
     }
     private static void retuneXp(YamlConfiguration yaml, YamlConfiguration defaults, Progression shared, Progression former) {

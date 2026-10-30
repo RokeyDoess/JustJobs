@@ -7,6 +7,19 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 class ConfigUpgradeTest {
+    @Test void ownershipUpdateOnlyRefreshesTheOldBrewingDescription() {
+        var yaml = new YamlConfiguration(); yaml.set("config-version", 13);
+        yaml.set("jobs.brewing.description", "Make and improve potions with ingredients you load by hand.");
+        yaml.set("jobs.brewing.rules", List.of(Map.of("activity", "brew", "materials", List.of("SUGAR"), "xp", 8, "money", "0.2")));
+        yaml.set("jobs.digging.rules", List.of(Map.of("activity", "block-break", "materials", List.of("DIRT"), "xp", 9)));
+        assertTrue(ConfigUpgrade.jobs(yaml));
+        assertEquals("Make and improve potions.", yaml.getString("jobs.brewing.description"));
+        assertEquals(8, yaml.getMapList("jobs.brewing.rules").getFirst().get("xp"));
+        assertFalse(yaml.contains("jobs.digging.progression")); assertFalse(yaml.contains("jobs.cooking"));
+        assertFalse(ConfigUpgrade.jobs(yaml));
+        yaml.set("config-version", 13); yaml.set("jobs.brewing.description", "Alchemy"); ConfigUpgrade.jobs(yaml);
+        assertEquals("Alchemy", yaml.getString("jobs.brewing.description"));
+    }
     @Test void processingAndTravelXpUpgradeWithoutChangingMoneyOrCustomAmounts() {
         var yaml = YamlConfiguration.loadConfiguration(new java.io.InputStreamReader(getClass().getResourceAsStream("/jobs.yml")));
         yaml.set("config-version", 12);
@@ -189,7 +202,7 @@ class ConfigUpgradeTest {
         yaml.set("jobs.sailor.rules", List.of(Map.of("activity", "sail", "money", "0.123")));
         yaml.set("jobs.sailor.distance-per-reward", 300);
         ConfigUpgrade.jobs(yaml);
-        assertEquals(13, yaml.getInt("config-version"));
+        assertEquals(14, yaml.getInt("config-version"));
         assertEquals("0.0075", yaml.getMapList("jobs.digger.rules").getFirst().get("money"));
         assertEquals(500, yaml.getInt("jobs.explorer.distance-per-reward"));
         assertEquals(300, yaml.getInt("jobs.sailor.distance-per-reward"));
@@ -334,7 +347,7 @@ class ConfigUpgradeTest {
         assertEquals(500, yaml.getInt("jobs.exploring.distance-per-reward"));
         assertEquals(500, yaml.getInt("jobs.sailing.distance-per-reward"));
         assertEquals("0.0075", yaml.getMapList("jobs.digging.rules").getFirst().get("money"));
-        assertEquals(13, yaml.getInt("config-version"));
+        assertEquals(14, yaml.getInt("config-version"));
         assertFalse(ConfigUpgrade.jobs(yaml));
     }
     @Test void fishingAndTravelUpgradeKeepsCustomRewardsSelectorsAndIntervals() {

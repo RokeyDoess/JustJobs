@@ -34,7 +34,7 @@ Job milestones are announced in global chat every 50 levels by default. The serv
 
 Reload applies payday timing, payout retries, saving, travel intervals, and diagnostic logging too. Changing payday timing keeps unpaid money. Invalid settings leave the previous settings running, with an error explaining what needs fixing.
 
-Job backups include progress and unpaid earnings. Keep full server backups as well: worlds hold block tracking, and your economy provider holds money already paid. Restore matching backups together while the server is stopped.
+Job backups include progress and unpaid earnings. Keep full server backups as well: worlds hold block tracking, workstation ownership, and unfinished ingredient attribution. Your economy provider holds money already paid. Restore matching backups together while the server is stopped.
 
 ## Permissions
 

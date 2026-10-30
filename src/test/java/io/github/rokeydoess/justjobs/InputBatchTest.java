@@ -6,6 +6,19 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.*;
 
 class InputBatchTest {
+    @Test void explicitContributorsTakePriorityOverTheWorkstationOwner() {
+        var batch = new InputBatch(); var fallback = new UUID(2, 1);
+        batch.add(FIRST, 2); batch.add(null, 2); batch.add(SECOND, 1);
+        assertEquals(FIRST, batch.consume(fallback)); assertEquals(FIRST, batch.consume(fallback));
+        assertEquals(fallback, batch.consume(fallback)); assertEquals(fallback, batch.consume(fallback));
+        assertEquals(SECOND, batch.consume(fallback)); assertNull(batch.consume(fallback));
+    }
+    @Test void ineligibleInputsNeverBecomeOwnerFallbackAfterPartialWithdrawal() {
+        var batch = new InputBatch(); batch.add(null, 2, false); batch.add(null, 2); batch.resize(3, null);
+        assertNull(batch.consume(FIRST)); assertNull(batch.consume(FIRST)); assertEquals(FIRST, batch.consume(FIRST));
+        batch.add(null, 3, false); batch.resize(2, null);
+        assertNull(batch.consume(FIRST)); assertNull(batch.consume(FIRST));
+    }
     private static final UUID FIRST = new UUID(1, 1), SECOND = new UUID(1, 2);
     @Test void topUpsKeepEachPlayersQuantityInOrder() {
         var batch = new InputBatch(); batch.add(FIRST, 32); batch.add(SECOND, 16);
