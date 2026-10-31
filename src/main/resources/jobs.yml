@@ -2,7 +2,7 @@
 # Keep its ID stable: player progress is stored against that ID.
 # Activities: block-break, craft, block-place, crop-harvest, breed, fish, mob-kill,
 # player-kill, trade, travel, sail, enchant, shear, beehive-harvest, tame, stonecut,
-# loom, brush, smith, anvil-repair, cure-villager, cartography, biome-discover, smelt, cook, brew.
+# loom, brush, smith, anvil-repair, cure-villager, cartography, biome-discover, smelt, cook, brew, boss-kill.
 # A rule matches materials or entities, depending on its activity. '*' matches any.
 # Each rule's description names its reward unit in the menu; edit it to suit your selectors.
 # Material tags such as '#minecraft:logs' are supported for block-break rules.
@@ -29,7 +29,9 @@
 # Anvil repairs count the fraction of full durability restored, not clicks or XP levels.
 # Travel pays a smaller bonus. Each job's default cap is 25 per period.
 # Processing pays the direct ingredient contributor, or the block owner for unassigned inputs.
-config-version: 14
+# boss-kill pays every eligible player who damaged the boss; each gets the full rule reward.
+# Rules may set bonus: true to leave the normal job allowance untouched.
+config-version: 15
 jobs:
   digging:
     name: Digging
@@ -113,6 +115,18 @@ jobs:
         entities: ['#hostile']
         xp: 5
         money: '0.05'
+      - activity: boss-kill
+        description: Ender Dragon defeated (each contributor)
+        entities: [ENDER_DRAGON]
+        xp: 200
+        money: '50'
+        bonus: true
+      - activity: boss-kill
+        description: Wither defeated (each contributor)
+        entities: [WITHER]
+        xp: 50
+        money: '12.5'
+        bonus: true
   dueling:
     name: Dueling
     icon: IRON_SWORD

@@ -1,54 +1,80 @@
 # Jobs themselves live in jobs.yml. /jobs reload applies every setting.
+# Times are in seconds unless marked otherwise.
+# Managed by JustJobs when upgrading settings. Leave this unchanged.
 config-version: 4
 economy:
   # Shown before money amounts in menus and messages. Use '' for no symbol.
   currency-symbol: '$'
+  # Pay whole coins only; fractional earnings carry forward to later payouts.
   whole-number-payouts: true
-  # Shared real-time paydays. 60 minutes pays on the hour, including offline players.
+  # Hold normal earnings for shared, real-time paydays, including offline players. Bonuses pay immediately.
   payday-enabled: true
+  # Minutes between shared paydays. 60 pays on the hour.
   payday-interval-minutes: 60
   # Per player, per job: resets each payday, or uses a rolling hour if paydays are off.
   # The existing key name is kept for compatibility. 0 disables the cap; XP is never capped.
   hourly-income-limit-per-job: '25'
-  # Released payments retry on this interval; the payday schedule holds new earnings.
+  # Retry interval for unpaid earnings. Normal earnings still wait for payday when enabled.
   payout-interval-seconds: 10
-  # Used for immediate payouts when payday-enabled is false.
+  # Allow payment messages in immediate-payout mode (payday-enabled: false).
   payout-chat: false
 feedback:
+  # Allow confirmed bonus deposit messages, with sources shown on hover. Independent of payday chat.
+  bonus-chat: true
+  # Allow payday messages. Players can turn their own messages off in Settings.
   payday-chat: true
+  # Starting payday chat preference for new players.
   payday-chat-default: true
+  # Allow personal level-up messages. Players can turn their own messages off in Settings.
   level-up-chat: true
+  # Starting level-up chat preference for new players.
   level-up-chat-default: true
   # Minimum time between personal level messages. Rapid gains show the latest level per job; 0 disables spacing.
   level-up-chat-interval-seconds: 10
   # Broadcast job milestones to everyone. 50 announces levels 50, 100, 150, etc.; 0 disables it.
   milestone-level-interval: 50
+  # Top players shown per job in the leaderboard selector; 1-10.
   leaderboard-preview-size: 5
+  # Allow job progress bars. Players can turn their own bar off in Settings.
   boss-bar: true
+  # How long a progress bar stays visible. Each job can also set a popup cooldown.
   boss-bar-seconds: 6
 display:
   # Default clock format: 12 for AM/PM or 24. Players can choose their own in Settings.
   time-format: 12
 storage:
+  # Save interval for changed progress and unpaid earnings.
   autosave-seconds: 30
+# Shared leveling defaults. Jobs can override these in jobs.yml.
+# Requirements rise linearly between these points, then stay flat at the plateau.
 progression:
+  # XP needed to reach level 2.
   first-level-xp: 10
+  # Next-level XP requirement at the last early level.
   early-level-xp: 40
+  # Last early level.
   early-level: 10
+  # Flat next-level XP requirement from the plateau onward.
   plateau-xp: 200
+  # First plateau level. There is no level cap.
   plateau-level: 50
 rules:
+  # World names where rewards are disabled. [] allows all worlds.
   excluded-worlds: []
-  # Survival and adventure players earn rewards; creative and spectators never do.
+  # Cooldown between kills of the same two players, in either direction.
   pvp-pair-cooldown-seconds: 60
   # False excludes spawners, trial spawners, spawn eggs, and other artificial spawns.
   reward-spawner-mobs: false
+  # Sailing check interval, in server ticks (20 ticks is normally one second).
   travel-sample-ticks: 20
+  # Sailing distance collected before applying a sample; measured in blocks.
   travel-minimum-displacement: 0.5
-  # Walking counts actual horizontal movement, including jumps. This is the per-second safety limit.
+  # Maximum horizontal walking distance counted per second, including jumps.
   maximum-walk-blocks-per-sample: 12
+  # Maximum sailing distance counted per sample, in blocks.
   maximum-sail-blocks-per-sample: 35
 development:
   # Periodic server-log summaries, including job totals and the top 20 player/job rows.
   verbose-logging: false
+  # Seconds between verbose summaries when enabled; 10-3600.
   summary-interval-seconds: 300

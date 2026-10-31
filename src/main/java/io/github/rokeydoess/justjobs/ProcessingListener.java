@@ -55,7 +55,6 @@ public final class ProcessingListener implements Listener {
         UUID owner = owner(state);
         if (owner == null && plugin.eligible(player)) {
             assign(state, player);
-            player.sendMessage("You now own this " + block.getType().name().toLowerCase(Locale.ROOT).replace('_', ' ') + " for job earnings.");
         } else if (player.getUniqueId().equals(owner)) updateEligibility(state, plugin.eligible(player));
     }
     private void assign(TileState state, Player player) {

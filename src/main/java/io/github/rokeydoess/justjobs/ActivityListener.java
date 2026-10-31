@@ -98,6 +98,7 @@ public final class ActivityListener implements Listener {
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void death(EntityDeathEvent e) {
         if (e.isCancelled()) return;
+        if (BossRewards.handles(plugin.registry(), e.getEntityType())) return;
         var killer = e.getEntity().getKiller();
         if (killer == null || !plugin.eligible(killer)) return;
         if (e.getEntity() instanceof Player victim) {

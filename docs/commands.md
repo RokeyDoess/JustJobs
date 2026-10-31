@@ -14,7 +14,9 @@ All three feedback options start enabled and are saved per player. Click the com
 
 The clock in Settings switches your time displays between 12-hour (AM/PM) and 24-hour time. Your choice is saved; until you pick one, the server's default applies.
 
-“Next paycheck” stays on the jobs page. It shows the next distribution time, a countdown, and unpaid earnings; click it or reopen the menu to refresh. Hover over “Payday!” in a payment message to see the nonzero job amounts included in that deposit.
+“Next paycheck” stays on the jobs page. It shows the next distribution time, a countdown, and the payout earned so far, with the server's payout rounding applied. Fractional leftovers stay saved. Click it or reopen the menu to refresh. Hover over “Payday!” in a payment message to see the nonzero job amounts included in that deposit.
+
+Bonuses pay immediately. Hover over “Bonus!” in their deposit message to see the source. The server can disable these messages separately from payday chat.
 
 Detailed leaderboards rank players by total job XP, reading left to right from the top row down.
 

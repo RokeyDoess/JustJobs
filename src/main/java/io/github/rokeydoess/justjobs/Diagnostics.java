@@ -36,7 +36,7 @@ final class Diagnostics {
         payments++;
         if (credited.signum() == 0) failures++;
         else if (credited.compareTo(payment.amount()) < 0) partial++;
-        jobs.forEach((job, amount) -> {
+        Paycheck.byJob(jobs).forEach((job, amount) -> {
             var stats = rows.computeIfAbsent(new Key(payment.player(), payment.name(), job), ignored -> new Stats());
             stats.paid = stats.paid.add(amount);
         });

@@ -25,6 +25,14 @@ final class VaultPayments {
             return Money.payable(pending, plugin.settings().getBoolean("economy.whole-number-payouts", true), economy.fractionalDigits());
         } catch (RuntimeException e) { return BigDecimal.ZERO; }
     }
+    BigDecimal preview(BigDecimal pending) {
+        int digits = -1;
+        try {
+            var economy = provider();
+            if (economy != null && economy.isEnabled()) digits = economy.fractionalDigits();
+        } catch (RuntimeException ignored) { }
+        return Money.payable(pending, plugin.settings().getBoolean("economy.whole-number-payouts", true), digits);
+    }
     PaymentDelivery.Result deposit(DataStore.Payment payment) {
         try {
             var economy = provider();

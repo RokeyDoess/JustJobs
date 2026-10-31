@@ -193,7 +193,7 @@ public final class JobsMenu implements Listener {
     private ItemStack paycheck(PlayerProfile profile) {
         String when = plugin.paydayEnabled() ? plugin.formatTime(profile, plugin.nextPayday()) : "As earnings become payable";
         long seconds = Math.max(0, (plugin.nextPayday() - System.currentTimeMillis()) / 1000);
-        var lore = new ArrayList<>(List.of("Distribution: " + when, "Earned: " + plugin.currencyRate(plugin.unpaidEarnings(profile))));
+        var lore = new ArrayList<>(List.of("Distribution: " + when, "Payout so far: " + plugin.currency(plugin.nextPaycheckAmount(profile))));
         if (plugin.paydayEnabled()) lore.add("Next payday in " + seconds / 60 + "m " + seconds % 60 + "s");
         lore.add("Reopen to refresh.");
         return item(Material.CLOCK, "Next paycheck", lore.toArray(String[]::new));
@@ -221,6 +221,7 @@ public final class JobsMenu implements Listener {
                 "■".repeat(filled) + "□".repeat(10 - filled) + "  " + Math.round(progress.fraction() * 100) + "%",
                 JustJobsPlugin.format(progress.xp()) + " / " + JustJobsPlugin.format(progress.required()) + " XP", ""));
         for (var rule : job.rules()) lore.add(reward(job, rule));
+        if (job.rules().stream().anyMatch(JobRegistry.Rule::bonus)) lore.add("Bonus rewards don't use your job money limit.");
         if (job.rules().stream().anyMatch(r -> r.activity() == JobRegistry.Activity.TRAVEL || r.activity() == JobRegistry.Activity.SAIL))
             lore.add("Next travel reward: " + Math.round(profile.travel.distance(job.id())) + " / " + Math.round(job.distancePerReward()) + " blocks");
         var limit = plugin.hourlyLimit(job);
@@ -238,7 +239,7 @@ public final class JobsMenu implements Listener {
             case CROP_HARVEST -> "harvest";
             case BREED -> "animal bred";
             case FISH -> "catch";
-            case MOB_KILL, PLAYER_KILL -> "kill";
+            case MOB_KILL, PLAYER_KILL, BOSS_KILL -> "kill";
             case TRADE -> "emerald spent";
             case TRAVEL -> "blocks walked";
             case SAIL -> "blocks sailed";
@@ -270,7 +271,8 @@ public final class JobsMenu implements Listener {
             if (!rule.operations().isEmpty()) unit += " (" + String.join(", ", rule.operations().stream().sorted().toList()) + ")";
         }
         if (travel) unit = Math.round(units) + " " + unit;
-        return JustJobsPlugin.format(rule.xp() * units) + " XP + " + plugin.currencyRate(rule.money().multiply(java.math.BigDecimal.valueOf(units))) + " / " + unit;
+        return JustJobsPlugin.format(rule.xp() * units) + " XP + " + plugin.currencyRate(rule.money().multiply(java.math.BigDecimal.valueOf(units))) + " / " + unit
+                + (rule.bonus() ? " (bonus)" : "");
     }
     private ItemStack item(Material material, String name, String... lore) {
         var item = new ItemStack(material);

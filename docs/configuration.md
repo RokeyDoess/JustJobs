@@ -11,7 +11,7 @@ Change a rule's `xp` and `money` to tune its reward. Set a job's `enabled` to `f
 | Digging | 0.0085 per natural soil or sand block |
 | Mining | 0.006 per natural stone block; ores pay 0.03, 0.08, or 0.35 |
 | Treefelling | 0.075 per eligible log |
-| Hunting | 0.05 per hostile mob killed |
+| Hunting | 0.05 per hostile mob killed; boss bonuses of 50 per Ender Dragon and 12.50 per Wither, for each contributor |
 | Dueling | 2.5 per player kill, with a 60-second cooldown between the same two players |
 | Trading | 0.10 per emerald spent with a villager |
 | Exploring | 0.00075 per block walked, awarded every 500 blocks; 0.25 per new biome; 0.05 per map expanded or locked |
@@ -63,6 +63,7 @@ Keep the ID (`snow_digging` here) stable to preserve progress. IDs use lowercase
 | `breed` | An animal bred, credited to the player who initiated it |
 | `fish` | A successful rod catch, including junk and treasure |
 | `mob-kill` | A mob kill credited to the player |
+| `boss-kill` | Defeat an Ender Dragon or Wither; each eligible player who damaged it receives the full reward |
 | `player-kill` | A player kill allowed by the pair cooldown |
 | `trade` | Each emerald spent with a villager, using the actual trade price |
 | `travel` | Each block walked |
@@ -94,13 +95,25 @@ Biome discoveries start being tracked after this update. Each biome pays once pe
 
 For smelting and cooking, each manually loaded quantity keeps its contributor. Unassigned inputs, including hopper-fed ingredients, pay the workstation owner. Inputs process in insertion order; withdrawals remove the newest quantities first. Campfires track each food slot separately. Fuel and whoever collects the output don't affect credit. Cooking and nonfood smelting are separate activities, so one result doesn't pay both.
 
-The player who places a furnace, smoker, blast furnace, brewing stand, or campfire owns it. For existing blocks with no recorded owner, the first eligible player to open one claims it and gets a short confirmation. Existing campfires use the first successful food insertion instead. Opening an owned workstation never transfers it. Breaking the block clears its ownership; a replacement belongs to its new placer.
+The player who places a furnace, smoker, blast furnace, brewing stand, or campfire owns it. For existing blocks with no recorded owner, the first eligible player to open one silently claims it. Existing campfires use the first successful food insertion instead. Opening an owned workstation never transfers it. Breaking the block clears its ownership; a replacement belongs to its new placer.
 
 Brewing tracks only the consumed recipe ingredient. One ingredient earns one reward whether it changes one bottle or three. Bottle loading can be automated, and potion enhancements count. Blaze powder used as fuel doesn't pay; blaze powder used as a potion ingredient does.
 
 Loading a feeder chest doesn't attach a contributor to its ingredients: hopper-fed inputs use the processing block's owner. Fully automatic farms can therefore earn for that owner too. Inputs already inside a workstation can use owner fallback after it is claimed. With neither a contributor nor an owner, processing earns nothing.
 
 Direct inputs must be loaded while the player is eligible to earn. Known creative-mode or permission-denied inputs don't pay anyone, including through owner fallback. Owners who are online must also be eligible; offline owner fallback uses their last recorded eligibility at placement, opening, or processing. Ownership and contributor batches survive restarts, and processing can earn while their players are offline. Rewards enter the usual paycheck and per-player job cap on completion. Multiple machines don't create separate allowances, and XP stays uncapped.
+
+## Boss rewards and bonuses
+
+Hunting's Ender Dragon reward is 200 XP and 50 coins; the Wither gives 50 XP and 12.50 coins. Edit their `boss-kill` rules in `jobs.yml` to change either amount. Every eligible player who deals positive, uncancelled damage during that boss's lifetime gets the full reward on its death. It isn't split, and the finishing blow doesn't matter. Projectiles count for their shooter; nearby players who never damage it don't qualify. Participants stay recorded across reloads and restarts, and can receive credit while offline.
+
+The boss rules use `bonus: true`. This reusable rule option pays immediately, outside the job money cap, without consuming its normal allowance. Set it to `false`, or leave it out, to use the usual cap and payday schedule. Bonuses still use normal payout rounding: whole-number mode pays 12 from a 12.50 bonus and keeps 0.50 toward the next payment. Failed deposits retry automatically without releasing normal paycheck earnings early.
+
+After a confirmed bonus deposit, chat says `Bonus! $50 has been deposited into your account.` Hover over “Bonus!” to see its source. Custom rules use their `description` as the source. The amount is what actually arrived, and the menu marks bonus rates. `feedback.bonus-chat` controls these messages independently of payday chat.
+
+Player-summoned Withers count even when artificial mobs are excluded. Command, custom, egg, and spawner-created bosses follow `rules.reward-spawner-mobs`. Bosses covered by a `boss-kill` rule don't also earn a normal `mob-kill` reward. Existing Hunting configurations gain the defaults once; existing custom boss rules take precedence.
+
+Damage must be attributed to a player. Anonymous explosions don't identify a contributor, and damage from before this update can't be recovered.
 
 ## Money and limits
 
@@ -117,6 +130,8 @@ Paydays run every real-time hour by default, on the hour, for all players togeth
 `economy.payday-interval-minutes` sets the period (1–1440 minutes). The default pays on the hour. Custom periods follow a shared UTC schedule; the menu displays server-local time. Set `economy.payday-enabled: false` for immediate payouts. Reload applies a changed period to the next future boundary and keeps everything owed. Paydays missed during downtime become payable after startup; settled paychecks aren't repeated.
 
 Whole-number payouts pay 1 from a paycheck of 1.37 and keep 0.37 for later. Remainders combine with future released earnings. All jobs share one unpaid balance. Set `economy.whole-number-payouts` to `false` to allow the smaller payments your economy supports. Smaller remainders stay saved. `economy.currency-symbol` sets the prefix used in menus and messages; use `''` for none.
+
+The menu's “Payout so far” applies those payout rules: 5.41 earned shows 5.00 in whole-number mode, with 0.41 kept for later. Amounts display at most two decimal places; payable amounts smaller than 0.01 show `<0.01` with your currency symbol. Reward rates keep their configured precision.
 
 Rejected payments retry automatically without waiting for another payday. Missing economy support leaves earnings saved and produces a server log warning. Providers that require accounts have them created before payment. Partial credits keep the unpaid amount, and an unreadable account does not hold up other players. Payment messages describe only the money actually credited, after its confirmation is saved.
 
@@ -165,7 +180,7 @@ Personal level-up messages have ten seconds between them by default. If several 
 
 ## Shared settings
 
-These are in `config.yml`. Times are in seconds unless marked otherwise.
+These are in `config.yml`, with short comments beside each setting. Missing comments are added on load without replacing custom comments or values. Times are in seconds unless marked otherwise.
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
@@ -176,6 +191,7 @@ These are in `config.yml`. Times are in seconds unless marked otherwise.
 | `display.time-format` | 12 | Default clock format: `12` uses AM/PM; `24` uses a 24-hour clock. Players can override it in Settings |
 | `feedback.payday-chat` | true | Allow payday messages |
 | `feedback.payday-chat-default` | true | Starting payday chat preference for new players |
+| `feedback.bonus-chat` | true | Allow confirmed bonus deposit messages, with the source shown on hover |
 | `feedback.level-up-chat` | true | Allow level-up messages |
 | `feedback.level-up-chat-default` | true | Starting chat preference for new players |
 | `feedback.level-up-chat-interval-seconds` | 10 | Minimum spacing between personal level messages across jobs; `0` disables spacing |

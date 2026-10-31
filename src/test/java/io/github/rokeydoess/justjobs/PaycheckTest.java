@@ -8,6 +8,25 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class PaycheckTest {
     static final long HOUR = 3_600_000;
+    @Test void bossBonusesPreserveTheNormalAllowanceAndSurvivePartialRefunds() {
+        var p = new Paycheck(); var cap = new BigDecimal("25");
+        p.earnBonus("hunting", new BigDecimal("50"), 1, HOUR, true);
+        assertEquals(0, p.earned("hunting", 1).signum());
+        assertEquals(cap, p.earn("hunting", cap, cap, 2, HOUR, true));
+        assertEquals(0, p.available().compareTo(new BigDecimal("50")));
+        assertEquals(cap, p.snapshot().current().get("hunting"));
+        p.advance(HOUR, HOUR, true);
+        var reserved = new HashMap<>(p.take(new BigDecimal("75")));
+        assertEquals(Map.of("hunting", new BigDecimal("75")), Paycheck.byJob(reserved));
+        assertEquals(Map.of("hunting", new BigDecimal("12.5")), Paycheck.byJob(Paycheck.take(reserved, new BigDecimal("12.5"))));
+        p.refund(reserved);
+        var restored = new Paycheck();
+        p.snapshot().due().forEach((job, amount) -> restored.restore(p.snapshot().next(), job, amount, true));
+        assertEquals(0, restored.available().compareTo(new BigDecimal("62.5")));
+        assertEquals(cap, restored.earn("hunting", cap, cap, HOUR + 1, HOUR, true));
+        restored.reschedule(HOUR + 2, HOUR, false);
+        assertEquals(0, restored.available().compareTo(new BigDecimal("87.5")));
+    }
     @Test void jobCapsResetAtTheCutoffEvenWhenThePreviousPaycheckIsUnpaid() {
         var p = new Paycheck(); var limit = new BigDecimal("100");
         assertEquals(new BigDecimal("99.75"), p.earn("hunting", new BigDecimal("99.75"), limit, HOUR - 2, HOUR, true));

@@ -7,6 +7,22 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 class ConfigUpgradeTest {
+    @Test void bossRulesAreAddedWithoutChangingCustomRewardsOrRestoringDeletedJobs() {
+        var yaml = new YamlConfiguration(); yaml.set("config-version", 14);
+        var original = Map.of("activity", "mob-kill", "entities", List.of("ZOMBIE"), "xp", 8, "money", "0.2");
+        yaml.set("jobs.hunting.rules", List.of(original));
+        assertTrue(ConfigUpgrade.jobs(yaml));
+        var rules = yaml.getMapList("jobs.hunting.rules");
+        assertEquals(original, rules.getFirst()); assertEquals(3, rules.size());
+        assertEquals("50", rules.get(1).get("money")); assertEquals("12.5", rules.get(2).get("money"));
+        assertEquals(true, rules.get(1).get("bonus")); assertFalse(yaml.contains("jobs.cooking"));
+        assertFalse(ConfigUpgrade.jobs(yaml));
+        var custom = new YamlConfiguration(); custom.set("config-version", 14);
+        custom.set("jobs.hunting.rules", List.of(original));
+        custom.set("jobs.raiding.rules", List.of(Map.of("activity", "boss-kill", "entities", List.of("WITHER"), "money", "2")));
+        ConfigUpgrade.jobs(custom);
+        assertEquals(List.of(original), custom.getMapList("jobs.hunting.rules"));
+    }
     @Test void ownershipUpdateOnlyRefreshesTheOldBrewingDescription() {
         var yaml = new YamlConfiguration(); yaml.set("config-version", 13);
         yaml.set("jobs.brewing.description", "Make and improve potions with ingredients you load by hand.");
@@ -202,7 +218,7 @@ class ConfigUpgradeTest {
         yaml.set("jobs.sailor.rules", List.of(Map.of("activity", "sail", "money", "0.123")));
         yaml.set("jobs.sailor.distance-per-reward", 300);
         ConfigUpgrade.jobs(yaml);
-        assertEquals(14, yaml.getInt("config-version"));
+        assertEquals(15, yaml.getInt("config-version"));
         assertEquals("0.0075", yaml.getMapList("jobs.digger.rules").getFirst().get("money"));
         assertEquals(500, yaml.getInt("jobs.explorer.distance-per-reward"));
         assertEquals(300, yaml.getInt("jobs.sailor.distance-per-reward"));
@@ -347,7 +363,7 @@ class ConfigUpgradeTest {
         assertEquals(500, yaml.getInt("jobs.exploring.distance-per-reward"));
         assertEquals(500, yaml.getInt("jobs.sailing.distance-per-reward"));
         assertEquals("0.0075", yaml.getMapList("jobs.digging.rules").getFirst().get("money"));
-        assertEquals(14, yaml.getInt("config-version"));
+        assertEquals(15, yaml.getInt("config-version"));
         assertFalse(ConfigUpgrade.jobs(yaml));
     }
     @Test void fishingAndTravelUpgradeKeepsCustomRewardsSelectorsAndIntervals() {

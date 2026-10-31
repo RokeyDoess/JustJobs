@@ -20,17 +20,21 @@ public record JobRegistry(List<Job> jobs) {
     public enum Activity {
         BLOCK_BREAK, BLOCK_PLACE, CRAFT, CROP_HARVEST, MOB_KILL, BREED, FISH, PLAYER_KILL, TRADE, TRAVEL, SAIL, ENCHANT,
         SHEAR, BEEHIVE_HARVEST, TAME, STONECUT, LOOM, BRUSH, SMITH, ANVIL_REPAIR, CURE_VILLAGER, CARTOGRAPHY, BIOME_DISCOVER,
-        SMELT, COOK, BREW;
+        SMELT, COOK, BREW, BOSS_KILL;
         static Activity parse(String text) { return valueOf(text.toUpperCase(Locale.ROOT).replace('-', '_')); }
         boolean usesMaterials() { return switch (this) {
             case BLOCK_BREAK, BLOCK_PLACE, CRAFT, CROP_HARVEST, FISH, BEEHIVE_HARVEST, STONECUT, LOOM, BRUSH, SMITH, ANVIL_REPAIR, CARTOGRAPHY, SMELT, COOK, BREW -> true;
             default -> false;
         }; }
-        boolean usesEntities() { return this == MOB_KILL || this == BREED || this == SHEAR || this == TAME || this == CURE_VILLAGER; }
+        boolean usesEntities() { return this == MOB_KILL || this == BOSS_KILL || this == BREED || this == SHEAR || this == TAME || this == CURE_VILLAGER; }
         boolean usesItems() { return usesMaterials() && this != BLOCK_BREAK && this != BLOCK_PLACE && this != CROP_HARVEST && this != BRUSH; }
     }
     public record Rule(Activity activity, Set<Material> materials, Set<EntityType> entities,
-                       boolean any, double xp, BigDecimal money, String description, Set<String> biomes, Set<String> operations) {
+                       boolean any, double xp, BigDecimal money, String description, Set<String> biomes, Set<String> operations, boolean bonus) {
+        public Rule(Activity activity, Set<Material> materials, Set<EntityType> entities, boolean any, double xp, BigDecimal money,
+                    String description, Set<String> biomes, Set<String> operations) {
+            this(activity, materials, entities, any, xp, money, description, biomes, operations, false);
+        }
         public boolean matches(Activity type, Material material, EntityType entity) {
             return matches(type, material, entity, null);
         }
@@ -100,7 +104,8 @@ public record JobRegistry(List<Job> jobs) {
                     var rule = new YamlConfiguration();
                     for (var pair : map.entrySet()) rule.set(pair.getKey().toString(), pair.getValue());
                     var activity = Activity.parse(rule.getString("activity", ""));
-                    ConfigValues.keys(rule, Set.of("activity", "materials", "entities", "biomes", "operations", "xp", "money", "description"));
+                    ConfigValues.keys(rule, Set.of("activity", "materials", "entities", "biomes", "operations", "xp", "money", "description", "bonus"));
+                    boolean bypass = ConfigValues.bool(rule, "bonus", false);
                     double xp = ConfigValues.number(rule, "xp", 0);
                     var money = ConfigValues.money(rule, "money", BigDecimal.ZERO);
                     if (!Double.isFinite(xp) || xp < 0 || xp > 1_000_000 || money.signum() < 0 || money.compareTo(new BigDecimal("1000000")) > 0 || money.scale() > 8)
@@ -159,9 +164,11 @@ public record JobRegistry(List<Job> jobs) {
                     }
                     if (activity.usesMaterials() && !any && materials.isEmpty()) throw new IllegalArgumentException(activity.name().toLowerCase(Locale.ROOT) + " needs materials");
                     if (activity.usesEntities() && !any && entities.isEmpty()) throw new IllegalArgumentException(activity.name().toLowerCase(Locale.ROOT) + " needs entities");
+                    if (activity == Activity.BOSS_KILL && entities.stream().anyMatch(type -> !BossRewards.isBoss(type)))
+                        throw new IllegalArgumentException("boss-kill supports WITHER and ENDER_DRAGON");
                     if (activity == Activity.BIOME_DISCOVER && !any && biomes.isEmpty()) throw new IllegalArgumentException("biome-discover needs biomes");
                     rules.add(new Rule(activity, Set.copyOf(materials), Set.copyOf(entities), any, xp, money,
-                            ConfigValues.text(rule, "description", "", 100).strip(), Set.copyOf(biomes), Set.copyOf(operations)));
+                            ConfigValues.text(rule, "description", "", 100).strip(), Set.copyOf(biomes), Set.copyOf(operations), bypass));
                 }
                 if (rules.isEmpty()) throw new IllegalArgumentException("Job needs at least one rule");
                 jobs.add(new Job(id, entry.getString("name", id), entry.getString("description", ""), icon, color,

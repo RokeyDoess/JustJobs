@@ -404,12 +404,20 @@ public class ReleaseChecks extends JavaPlugin implements Listener {
         var file = new java.io.File(jobs.getDataFolder(), "config.yml");
         var yaml = YamlConfiguration.loadConfiguration(file);
         yaml.set("storage.autosave-seconds", 1); yaml.set("economy.payout-interval-seconds", 1); yaml.set("rules.travel-sample-ticks", 2);
+        yaml.setComments("feedback.payday-chat", List.of());
+        yaml.setComments("storage.autosave-seconds", List.of("Save changed progress frequently on this server."));
         var previous = List.copyOf((List<BukkitTask>) field(jobs, "scheduled"));
         yaml.save(file); Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "jobs reload");
         check(previous.stream().allMatch(BukkitTask::isCancelled), "reload cancels every previous repeating task");
         var replacement = (List<BukkitTask>) field(jobs, "scheduled");
         check(replacement.size() == 6 && replacement.stream().noneMatch(BukkitTask::isCancelled), "reload replaces all schedules without duplicates");
         check(jobs.settings().getLong("rules.travel-sample-ticks") == 2, "new interval settings apply without a restart");
+        var documented = YamlConfiguration.loadConfiguration(file);
+        check(documented.getComments("feedback.payday-chat").stream().anyMatch(comment -> comment.contains("Allow payday messages")),
+                "reload adds missing config explanations to an existing file");
+        check(documented.getComments("storage.autosave-seconds").equals(List.of("Save changed progress frequently on this server."))
+                        && documented.getInt("storage.autosave-seconds") == 1,
+                "config documentation preserves custom comments and values");
         var original = jobs.settings();
         yaml.set("feedback.boss-bar", "broken"); yaml.save(file);
         Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "jobs reload");

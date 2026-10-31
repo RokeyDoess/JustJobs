@@ -34,8 +34,8 @@ final class ConfigUpgrade {
         return jobs(yaml, Progression.defaults(), new Progression(25, 150, 2500, 10, 50, 1));
     }
     static boolean jobs(YamlConfiguration yaml, Progression shared, Progression former) {
-        long version = ConfigValues.integer(yaml, "config-version", 0, 0, 14);
-        if (version == 14) return false;
+        long version = ConfigValues.integer(yaml, "config-version", 0, 0, 15);
+        if (version == 15) return false;
         if (version < 2) upgradeOriginalJobs(yaml, version);
         var jobs = yaml.getConfigurationSection("jobs");
         if (jobs != null && !jobs.getKeys(false).isEmpty()) {
@@ -68,9 +68,23 @@ final class ConfigUpgrade {
             if (version < 13) retuneXp(yaml, defaults, shared, former);
             if ("Make and improve potions with ingredients you load by hand.".equals(yaml.getString("jobs.brewing.description")))
                 yaml.set("jobs.brewing.description", defaults.getString("jobs.brewing.description"));
+            addBossRules(yaml, defaults);
         }
-        yaml.set("config-version", 14);
+        yaml.set("config-version", 15);
         return true;
+    }
+    private static void addBossRules(YamlConfiguration yaml, YamlConfiguration defaults) {
+        var jobs = yaml.getConfigurationSection("jobs");
+        boolean custom = jobs.getKeys(false).stream().anyMatch(id -> yaml.getMapList("jobs." + id + ".rules").stream()
+                .anyMatch(rule -> "boss-kill".equalsIgnoreCase(String.valueOf(rule.get("activity")).replace('_', '-'))));
+        if (custom) return;
+        for (String id : java.util.List.of("hunting", "hunter")) {
+            var job = jobs.getConfigurationSection(id);
+            if (job == null || !job.isList("rules") || job.getList("rules").size() != job.getMapList("rules").size()) continue;
+            var rules = new java.util.ArrayList<Map<?, ?>>(job.getMapList("rules"));
+            rules.addAll(defaults.getMapList("jobs.hunting.rules").stream().filter(rule -> "boss-kill".equals(rule.get("activity"))).toList());
+            job.set("rules", rules);
+        }
     }
     private static void retuneXp(YamlConfiguration yaml, YamlConfiguration defaults, Progression shared, Progression former) {
         var aliases = Map.of("digger", "digging", "miner", "mining", "lumberjack", "treefelling", "hunter", "hunting",

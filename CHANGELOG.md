@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.1.2 (2026-10-30)
+
+- Hunting now rewards boss fights: 200 XP and 50 coins for the Ender Dragon, 50 XP and 12.50 coins for the Wither. Every eligible player who damaged the boss gets the full reward, including offline contributors. Participation survives restarts.
+- Added reusable `bonus: true` reward rules. Bonuses pay immediately and bypass the job money cap without using its allowance. Both default boss rules are bonuses; their XP, money, and bonus status are configurable. Whole-number remainders stay saved and failed deposits retry automatically.
+- Confirmed bonus deposits send `Bonus! x has been deposited into your account.` Hover over “Bonus!” for the paid sources. `feedback.bonus-chat` controls these messages independently of payday chat.
+- The next-paycheck entry shows the payout earned so far, rounded for the server's payout mode and economy provider. Fractional leftovers stay saved without inflating the displayed paycheck.
+- Workstations are now claimed silently.
+- Added short explanations throughout `config.yml`. Missing descriptions are added to existing configs on load; custom values and comments stay.
+
 ## 1.1.1 (2026-10-29)
 
 - Manually loaded ingredients still pay the player who added them. Hopper-fed and other unassigned ingredients now pay the workstation owner, including fully automatic setups.

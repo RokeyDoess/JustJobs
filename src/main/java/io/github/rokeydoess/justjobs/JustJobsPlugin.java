@@ -79,6 +79,7 @@ public final class JustJobsPlugin extends JavaPlugin {
             diagnostics = new Diagnostics(getLogger());
             getServer().getPluginManager().registerEvents(natural, this);
             getServer().getPluginManager().registerEvents(activities, this);
+            getServer().getPluginManager().registerEvents(new BossRewards(this), this);
             getServer().getPluginManager().registerEvents(new CraftingListener(this), this);
             workstations = new WorkstationListener(this);
             getServer().getPluginManager().registerEvents(workstations, this);
@@ -109,6 +110,7 @@ public final class JustJobsPlugin extends JavaPlugin {
             defaults = YamlConfiguration.loadConfiguration(reader);
         }
         for (String key : defaults.getKeys(true)) if (!defaults.isConfigurationSection(key) && !next.contains(key)) next.set(key, defaults.get(key));
+        for (String key : defaults.getKeys(true)) if (next.getComments(key).isEmpty()) next.setComments(key, defaults.getComments(key));
         ConfigValues.keys(next, Set.of("config-version", "economy", "feedback", "display", "storage", "progression", "rules", "development"));
         for (String section : List.of("economy", "feedback", "display", "storage", "progression", "rules", "development")) {
             if (!next.isConfigurationSection(section)) throw new IllegalArgumentException(section + " must be a section");
@@ -116,7 +118,7 @@ public final class JustJobsPlugin extends JavaPlugin {
         }
         for (String key : List.of("storage.autosave-seconds", "economy.payout-interval-seconds", "feedback.boss-bar-seconds", "rules.travel-sample-ticks", "rules.pvp-pair-cooldown-seconds"))
             ConfigValues.integer(next, key, defaults.getLong(key), 1, 86400);
-        for (String key : List.of("economy.whole-number-payouts", "economy.payout-chat", "economy.payday-enabled", "feedback.payday-chat", "feedback.payday-chat-default", "feedback.level-up-chat", "feedback.level-up-chat-default", "feedback.boss-bar", "rules.reward-spawner-mobs", "development.verbose-logging"))
+        for (String key : List.of("economy.whole-number-payouts", "economy.payout-chat", "economy.payday-enabled", "feedback.payday-chat", "feedback.payday-chat-default", "feedback.bonus-chat", "feedback.level-up-chat", "feedback.level-up-chat-default", "feedback.boss-bar", "rules.reward-spawner-mobs", "development.verbose-logging"))
             ConfigValues.bool(next, key, defaults.getBoolean(key));
         ConfigValues.integer(next, "economy.payday-interval-minutes", 60, 1, 1440);
         ConfigValues.integer(next, "development.summary-interval-seconds", 300, 10, 3600);
@@ -225,6 +227,11 @@ public final class JustJobsPlugin extends JavaPlugin {
         var player = Bukkit.getPlayer(owner);
         if (profile != null && (player == null || eligible(player))) award(profile, player, activity, material, null, units, true, null);
     }
+    public void awardBoss(UUID contributor, org.bukkit.World world, EntityType type) {
+        if (storageFailed || settings.getStringList("rules.excluded-worlds").contains(world.getName())) return;
+        var profile = players.get(contributor);
+        if (profile != null) award(profile, Bukkit.getPlayer(contributor), JobRegistry.Activity.BOSS_KILL, null, type, 1, true, null);
+    }
     private void award(PlayerProfile profile, Player player, JobRegistry.Activity activity, Material material, EntityType entity, double units, boolean naturalBlock, String detail) {
         long now = System.currentTimeMillis();
         for (var job : registry.jobs()) {
@@ -236,12 +243,19 @@ public final class JustJobsPlugin extends JavaPlugin {
                 if (rewardUnits == 0) continue;
             }
             double xp = 0;
-            BigDecimal money = BigDecimal.ZERO;
+            BigDecimal money = BigDecimal.ZERO, bonus = BigDecimal.ZERO;
+            var bonusSources = new HashMap<String, BigDecimal>();
             for (var rule : job.rules()) if (rule.matches(activity, material, entity, detail)) {
                 xp += rule.xp() * rewardUnits;
-                money = money.add(rule.money().multiply(BigDecimal.valueOf(rewardUnits)));
+                BigDecimal amount = rule.money().multiply(BigDecimal.valueOf(rewardUnits));
+                if (rule.bonus()) {
+                    bonus = bonus.add(amount);
+                    String source = rule.description().isBlank() ? entity == null ? activity.name().toLowerCase(java.util.Locale.ROOT).replace('_', ' ')
+                            : entity.name().toLowerCase(java.util.Locale.ROOT).replace('_', ' ') : rule.description();
+                    bonusSources.merge(job.name() + ": " + source, amount, BigDecimal::add);
+                } else money = money.add(amount);
             }
-            if (xp == 0 && money.signum() == 0) continue;
+            if (xp == 0 && money.signum() == 0 && bonus.signum() == 0) continue;
             double before = profile.xp(job.id());
             double after = before + xp;
             if (!Double.isFinite(after)) continue;
@@ -251,8 +265,9 @@ public final class JustJobsPlugin extends JavaPlugin {
             BigDecimal credited = profile.paycheck.earn(job.id(), allowed, hourlyLimit(job), now, paydayInterval(), payday);
             // Keep rolling history so switching to immediate payouts doesn't grant a fresh hourly allowance.
             if (payday) profile.earnings.credit(job.id(), credited, BigDecimal.ZERO, now);
+            for (var source : bonusSources.entrySet()) credited = credited.add(profile.paycheck.earnBonus(job.id(), source.getKey(), source.getValue(), now, paydayInterval(), payday));
             profile.pending = profile.pending.add(credited);
-            if (diagnostics != null) diagnostics.award(profile, job.id(), xp, money, credited);
+            if (diagnostics != null) diagnostics.award(profile, job.id(), xp, money.add(bonus), credited);
             dirty.add(profile.id);
             if (credited.signum() > 0) { payoutQueue.add(profile.id); unpaid.add(profile.id); }
             var progress = job.progression().progress(after);
@@ -448,7 +463,7 @@ public final class JustJobsPlugin extends JavaPlugin {
                     var player = Bukkit.getPlayer(payment.player());
                     if (diagnostics != null) diagnostics.payment(payment, credited, paidJobs.get(payment.id()));
                     var profile = players.get(payment.player());
-                    notifyPayday(player, profile, credited, paidJobs.get(payment.id()));
+                    notifyPayment(player, profile, credited, paidJobs.get(payment.id()));
                 }
                 if (ownsBatch) paymentBatchInFlight = false;
             });
@@ -566,6 +581,10 @@ public final class JustJobsPlugin extends JavaPlugin {
     public long paydayInterval() { return settings.getLong("economy.payday-interval-minutes", 60) * 60_000; }
     public long nextPayday() { return Paycheck.next(System.currentTimeMillis(), paydayInterval()); }
     public BigDecimal unpaidEarnings(PlayerProfile profile) { return profile.pending.add(reservedAmounts.getOrDefault(profile.id, BigDecimal.ZERO)); }
+    public BigDecimal nextPaycheckAmount(PlayerProfile profile) {
+        BigDecimal earned = unpaidEarnings(profile);
+        return economy == null ? Money.payable(earned, settings.getBoolean("economy.whole-number-payouts", true), -1) : economy.preview(earned);
+    }
     public void togglePaydayChat(Player player) {
         var profile = profile(player); profile.paydayChat = !profile.paydayChat; dirty.add(profile.id);
         player.sendMessage("Payday messages " + (profile.paydayChat ? "enabled." : "disabled.")); save();
@@ -579,7 +598,7 @@ public final class JustJobsPlugin extends JavaPlugin {
     }
     public Component paydayMessage(BigDecimal amount, Map<String, BigDecimal> jobs) {
         Component hover = Component.text("Paycheck breakdown", NamedTextColor.GOLD);
-        for (var entry : new java.util.TreeMap<>(jobs).entrySet()) if (entry.getValue().signum() > 0) {
+        for (var entry : new java.util.TreeMap<>(Paycheck.byJob(jobs)).entrySet()) if (entry.getValue().signum() > 0) {
             var job = registry.get(entry.getKey());
             String name = job != null ? job.name() : entry.getKey().equals(Paycheck.PREVIOUS) ? "Previous earnings" : entry.getKey();
             hover = hover.append(Component.newline()).append(Component.text(name + ": " + currencyRate(entry.getValue()), NamedTextColor.GRAY));
@@ -590,6 +609,22 @@ public final class JustJobsPlugin extends JavaPlugin {
     public void notifyPayday(Player player, PlayerProfile profile, BigDecimal credited, Map<String, BigDecimal> jobs) {
         if (player != null && credited.signum() > 0 && profile.paydayChat && settings.getBoolean("feedback.payday-chat", true)
                 && (paydayEnabled() || settings.getBoolean("economy.payout-chat", false))) player.sendMessage(paydayMessage(credited, jobs));
+    }
+    public void notifyPayment(Player player, PlayerProfile profile, BigDecimal credited, Map<String, BigDecimal> sources) {
+        if (player == null || credited.signum() <= 0) return;
+        var regular = new HashMap<String, BigDecimal>();
+        sources.forEach((key, value) -> { if (!Paycheck.isBonus(key)) regular.put(key, value); });
+        notifyPayday(player, profile, Paycheck.total(regular), regular);
+        var bonuses = Paycheck.bonusSources(sources);
+        BigDecimal paid = Paycheck.total(bonuses);
+        if (paid.signum() > 0 && settings.getBoolean("feedback.bonus-chat", true)) {
+            Component hover = Component.text("Bonus sources", NamedTextColor.GOLD);
+            for (var source : new java.util.TreeMap<>(bonuses).entrySet()) if (source.getValue().signum() > 0)
+                hover = hover.append(Component.newline()).append(Component.text(source.getKey() + ": " + currencyRate(source.getValue()), NamedTextColor.GRAY));
+            player.sendMessage(Component.empty().append(Component.text("Bonus!", NamedTextColor.GOLD)
+                    .hoverEvent(net.kyori.adventure.text.event.HoverEvent.showText(hover)))
+                    .append(Component.text(" " + currencyRate(paid) + " has been deposited into your account.", NamedTextColor.GREEN)));
+        }
     }
     public String currencyRate(BigDecimal value) {
         return settings.getString("economy.currency-symbol", "$") + value.stripTrailingZeros().toPlainString();

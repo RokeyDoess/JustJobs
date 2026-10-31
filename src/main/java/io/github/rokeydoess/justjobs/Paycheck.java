@@ -8,6 +8,7 @@ import java.util.TreeMap;
 /** Separates the current period from money already released for payment. */
 public final class Paycheck {
     public static final String PREVIOUS = "@previous";
+    private static final String BONUS = "@bonus:";
     private final Map<String, BigDecimal> current = new HashMap<>(), due = new HashMap<>();
     private long next;
     public record Snapshot(long next, Map<String, BigDecimal> current, Map<String, BigDecimal> due) { }
@@ -45,6 +46,36 @@ public final class Paycheck {
         return next > 0 && now >= next ? BigDecimal.ZERO : current.getOrDefault(job, BigDecimal.ZERO);
     }
     public BigDecimal available() { return total(due); }
+    public BigDecimal earnBonus(String job, BigDecimal amount, long now, long interval, boolean enabled) {
+        return earnBonus(job, job, amount, now, interval, enabled);
+    }
+    public BigDecimal earnBonus(String job, String source, BigDecimal amount, long now, long interval, boolean enabled) {
+        if (amount.signum() < 0) throw new IllegalArgumentException("Negative bonus amount");
+        advance(now, interval, enabled);
+        if (amount.signum() > 0) due.merge(BONUS + job + ":" + source, amount, BigDecimal::add);
+        return amount;
+    }
+    public static boolean isBonus(String key) { return key.startsWith(BONUS); }
+    private static String jobId(String key) {
+        if (!isBonus(key)) return key;
+        String value = key.substring(BONUS.length()); int separator = value.indexOf(':');
+        return separator < 0 ? value : value.substring(0, separator);
+    }
+    public static Map<String, BigDecimal> bonusSources(Map<String, BigDecimal> amounts) {
+        var result = new TreeMap<String, BigDecimal>();
+        amounts.forEach((key, value) -> {
+            if (!isBonus(key)) return;
+            int separator = key.indexOf(':', BONUS.length());
+            result.merge(separator < 0 ? jobId(key) : key.substring(separator + 1), value, BigDecimal::add);
+        });
+        return Map.copyOf(result);
+    }
+    /** Preserve bonus attribution through reservations and refunds without using the normal cap bucket. */
+    public static Map<String, BigDecimal> byJob(Map<String, BigDecimal> amounts) {
+        var result = new TreeMap<String, BigDecimal>();
+        amounts.forEach((job, value) -> result.merge(jobId(job), value, BigDecimal::add));
+        return Map.copyOf(result);
+    }
     public Map<String, BigDecimal> take(BigDecimal amount) { return take(due, amount); }
     public void refund(Map<String, BigDecimal> amounts) { add(due, amounts); }
     public Snapshot snapshot() { return new Snapshot(next, Map.copyOf(current), Map.copyOf(due)); }

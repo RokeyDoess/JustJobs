@@ -17,8 +17,9 @@ import java.util.concurrent.ExecutorService;
 
 /** Real scheduler and Vault checks with simulated clock boundaries, including offline accounts. */
 public final class PaydayChecks extends ReleaseChecks {
-    static final UUID OFFLINE = new UUID(8, 1), PARTIAL = new UUID(8, 2), CAPPED = new UUID(8, 3);
+    static final UUID OFFLINE = new UUID(8, 1), PARTIAL = new UUID(8, 2), CAPPED = new UUID(8, 3), BONUS = new UUID(8, 4);
     boolean allowPartialRemainder;
+    int providerDigits = 2;
     PlayerProfile partial;
     @Override void start() throws Exception {
         jobs = (JustJobsPlugin) Bukkit.getPluginManager().getPlugin("JustJobs");
@@ -48,6 +49,12 @@ public final class PaydayChecks extends ReleaseChecks {
         jobConfig.getMapList("jobs.dueling.rules").getFirst().forEach((key, value) -> duelRule.put(key.toString(), value));
         duelRule.put("money", "5"); jobConfig.set("jobs.dueling.rules", List.of(duelRule)); jobConfig.save(jobFile);
         config.save(file); reload();
+        paycheckPreviewChecks();
+        var bonusPlayer = player(BONUS, "BonusWallet");
+        rejected.add(BONUS);
+        jobs.award(bonusPlayer, JobRegistry.Activity.PLAYER_KILL, null, null, 1);
+        jobs.award(bonusPlayer, JobRegistry.Activity.BOSS_KILL, null, org.bukkit.entity.EntityType.ENDER_DRAGON, 1);
+        jobs.award(bonusPlayer, JobRegistry.Activity.BOSS_KILL, null, org.bukkit.entity.EntityType.WITHER, 1);
         check(profile.paydayChat, "payday chat starts enabled");
         jobs.award(player, JobRegistry.Activity.PLAYER_KILL, null, null, 1);
         jobs.award(player, JobRegistry.Activity.FISH, Material.COD, null, 5);
@@ -66,11 +73,54 @@ public final class PaydayChecks extends ReleaseChecks {
     }
     void reload() { jobs.onCommand(Bukkit.getConsoleSender(), jobs.getCommand("jobs"), "jobs", new String[]{"reload"}); }
     void queue() throws Exception { var method = jobs.getClass().getDeclaredMethod("queueUnpaid"); method.setAccessible(true); method.invoke(jobs); }
+    void paycheckPreviewChecks() throws Exception {
+        var menus = new JobsMenu(jobs);
+        BigDecimal original = profile.pending;
+        try {
+            profile.pending = new BigDecimal("5.41987654321");
+            preview(menus, "$5.00", "whole-number preview excludes the retained fraction");
+            check(profile.pending.compareTo(new BigDecimal("5.41987654321")) == 0, "opening the paycheck preview preserves exact earnings");
+            profile.pending = new BigDecimal("0.99999999999");
+            preview(menus, "$0.00", "a sub-coin balance does not promise a whole-number payment");
+            profile.pending = new BigDecimal("2.20");
+            preview(menus, "$2.00", "combined earnings and carried fractions can form a payable whole amount");
+            jobs.settings().set("economy.whole-number-payouts", false);
+            profile.pending = new BigDecimal("5.41987654321");
+            preview(menus, "$5.41", "fractional preview uses the provider's precision without a decimal tail");
+            profile.pending = new BigDecimal("0.00999");
+            preview(menus, "$0.00", "fractions below the provider's precision are not promised as payable");
+            providerDigits = 3;
+            preview(menus, "<$0.01", "a payable sub-cent amount has a brief display below the cent threshold");
+            check(jobs.nextPaycheckAmount(profile).compareTo(new BigDecimal("0.009")) == 0, "preview uses a provider with three fractional digits");
+            providerDigits = -1;
+            check(jobs.nextPaycheckAmount(profile).compareTo(new BigDecimal("0.00999")) == 0, "unrestricted provider precision follows normal payout rounding");
+            Bukkit.getServicesManager().unregister(Economy.class, provider);
+            profile.pending = new BigDecimal("5.41987654321");
+            preview(menus, "$5.41", "temporarily unavailable economy support does not hide accrued earnings");
+        } finally {
+            Bukkit.getServicesManager().register(Economy.class, provider, this, ServicePriority.Highest);
+            profile.pending = original;
+            providerDigits = 2;
+            jobs.settings().set("economy.whole-number-payouts", true);
+        }
+    }
+    void preview(JobsMenu menus, String amount, String label) {
+        menus.open(player, false, 0, null);
+        check(current.getItem(39).getItemMeta().lore().stream().anyMatch(c -> plain(c).equals("Payout so far: " + amount)), label);
+    }
     void beforePayday() throws Exception {
         check(balances.isEmpty() && profile.pending.compareTo(new BigDecimal("6.25")) == 0, "whole earnings wait for payday instead of paying immediately");
+        var bonus = jobs.players().get(BONUS);
+        check(bonus.pending.compareTo(new BigDecimal("67.5")) == 0 && bonus.paycheck.available().compareTo(new BigDecimal("62.5")) == 0,
+                "rejected bonuses remain released without releasing normal paycheck earnings");
+        var bonusPlayer = player(BONUS, "BonusWallet");
+        int before = components.getOrDefault(BONUS, List.of()).size();
+        jobs.notifyPayment(bonusPlayer, bonus, BigDecimal.ZERO, bonus.paycheck.snapshot().due());
+        check(components.getOrDefault(BONUS, List.of()).size() == before, "failed deposits do not claim a bonus was deposited");
+        rejected.remove(BONUS);
         var menus = new JobsMenu(jobs); menus.open(player, false, 0, null);
-        check(current.getItem(39).getType() == Material.CLOCK && current.getItem(39).getItemMeta().lore().stream().anyMatch(c -> c.toString().contains("6.25")),
-                "Next paycheck shows the distribution time and earned amount");
+        check(current.getItem(39).getType() == Material.CLOCK && current.getItem(39).getItemMeta().lore().stream().anyMatch(c -> plain(c).equals("Payout so far: $6.00")),
+                "Next paycheck shows the actual whole-number payout earned so far");
         check(current.getItem(23).getItemMeta().lore().stream().anyMatch(c -> plain(c).equals("Earned this pay period: $5.00 / $100.00")),
                 "the jobs menu describes the active paycheck cap period");
         menus.click(new InventoryClickEvent(view(), InventoryType.SlotType.CONTAINER, 36, ClickType.LEFT, InventoryAction.PICKUP_ALL));
@@ -123,6 +173,26 @@ public final class PaydayChecks extends ReleaseChecks {
         later(50, this::afterRetry);
     }
     void afterRetry() throws Exception {
+        var bonus = jobs.players().get(BONUS);
+        check(balances.get(BONUS).compareTo(new BigDecimal("62")) == 0 && bonus.pending.compareTo(new BigDecimal("5.5")) == 0
+                        && bonus.paycheck.available().compareTo(new BigDecimal("0.5")) == 0,
+                "bonuses retry and deposit before payday while normal earnings and fractional leftovers stay held");
+        var bonusPlayer = player(BONUS, "BonusWallet");
+        var sources = new Paycheck(); sources.earnBonus("hunting", "Hunting: Ender Dragon", new BigDecimal("50"), 1, 3_600_000, true);
+        sources.earnBonus("hunting", "Hunting: Wither", new BigDecimal("12.5"), 2, 3_600_000, true);
+        bonus.paydayChat = false;
+        jobs.notifyPayment(bonusPlayer, bonus, new BigDecimal("62"), sources.take(new BigDecimal("62")));
+        var message = components.get(BONUS).getLast();
+        check(plain(message).equals("Bonus! $62 has been deposited into your account."), "confirmed bonus message shows only the actual whole-number deposit");
+        var heading = message.children().getFirst();
+        String hover = plain((net.kyori.adventure.text.Component) heading.hoverEvent().value());
+        check(hover.contains("Hunting: Ender Dragon: $50") && hover.contains("Hunting: Wither: $12") && !hover.contains("@bonus")
+                        && message.children().getLast().hoverEvent() == null,
+                "only Bonus carries a hover showing the paid sources, even when payday chat is off");
+        jobs.settings().set("feedback.bonus-chat", false); int count = components.get(BONUS).size();
+        jobs.notifyPayment(bonusPlayer, bonus, BigDecimal.ONE, Map.of("@bonus:hunting:Wither", BigDecimal.ONE));
+        check(components.get(BONUS).size() == count, "the server can disable bonus deposit messages");
+        jobs.settings().set("feedback.bonus-chat", true);
         check(balances.get(PARTIAL).compareTo(new BigDecimal("5")) == 0 && partial.pending.compareTo(new BigDecimal("5")) == 0,
                 "partial payments retry automatically without paying the new period early");
         check(worker.submit(store::unresolved).get().isEmpty(), "payday reservations settle without admin intervention");
@@ -158,6 +228,7 @@ public final class PaydayChecks extends ReleaseChecks {
     void installPartialProvider() {
         Economy delegate = provider; Bukkit.getServicesManager().unregister(Economy.class, delegate);
         provider = (Economy) Proxy.newProxyInstance(Economy.class.getClassLoader(), new Class<?>[]{Economy.class}, (p, method, args) -> {
+            if (method.getName().equals("fractionalDigits")) return providerDigits;
             if (method.getName().equals("depositPlayer") && ((OfflinePlayer) args[0]).getUniqueId().equals(PARTIAL) && !allowPartialRemainder) {
                 if (balances.getOrDefault(PARTIAL, BigDecimal.ZERO).signum() > 0) return new EconomyResponse(0, 2, EconomyResponse.ResponseType.FAILURE, "Temporary account limit");
                 args[1] = 2d;
