@@ -65,7 +65,8 @@ rules:
   pvp-pair-cooldown-seconds: 60
   # False excludes spawners, trial spawners, spawn eggs, and other artificial spawns.
   reward-spawner-mobs: false
-  # Sailing check interval, in server ticks (20 ticks is normally one second).
+  # Sailing check interval while players ride boats, in ticks (normally 20 per second).
+  # No sailing timer runs when there are no boat riders.
   travel-sample-ticks: 20
   # Sailing distance collected before applying a sample; measured in blocks.
   travel-minimum-displacement: 0.5

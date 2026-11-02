@@ -21,6 +21,8 @@ import org.bukkit.event.enchantment.EnchantItemEvent;
 import org.bukkit.event.entity.CreatureSpawnEvent;
 import org.bukkit.event.entity.EntityDeathEvent;
 import org.bukkit.event.entity.EntityTransformEvent;
+import org.bukkit.event.entity.EntityMountEvent;
+import org.bukkit.event.entity.EntityDismountEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerTeleportEvent;
@@ -28,6 +30,7 @@ import org.bukkit.event.player.PlayerChangedWorldEvent;
 import org.bukkit.event.player.PlayerRespawnEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.persistence.PersistentDataType;
+import org.bukkit.scheduler.BukkitTask;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -41,6 +44,9 @@ public final class ActivityListener implements Listener {
     private final NamespacedKey spawned;
     private final Map<UUID, TravelSample> travel = new HashMap<>();
     private final Map<UUID, WalkWindow> walking = new HashMap<>();
+    private final Map<UUID, Player> sailors = new HashMap<>();
+    private final Map<UUID, BukkitTask> sailingChecks = new HashMap<>();
+    private BukkitTask sailingTask;
     private record TravelSample(Player player, Location location, UUID vehicle, double pending) { }
     private record WalkWindow(int second, double distance) { }
 
@@ -127,21 +133,61 @@ public final class ActivityListener implements Listener {
         if (emeralds > 0) plugin.award(e.getPlayer(), TRADE, null, null, emeralds);
     }
     @EventHandler(priority = EventPriority.MONITOR)
-    public void join(PlayerJoinEvent e) { plugin.profile(e.getPlayer()); travel.remove(e.getPlayer().getUniqueId()); }
+    public void join(PlayerJoinEvent e) { plugin.profile(e.getPlayer()); travel.remove(e.getPlayer().getUniqueId()); checkSailing(e.getPlayer()); }
     @EventHandler(priority = EventPriority.MONITOR)
-    public void quit(PlayerQuitEvent e) { clearSailing(e.getPlayer().getUniqueId()); plugin.forgetFeedback(e.getPlayer().getUniqueId()); walking.remove(e.getPlayer().getUniqueId()); plugin.save(); }
+    public void quit(PlayerQuitEvent e) { removeSailor(e.getPlayer().getUniqueId()); plugin.forgetFeedback(e.getPlayer().getUniqueId()); walking.remove(e.getPlayer().getUniqueId()); plugin.save(); }
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
-    public void teleport(PlayerTeleportEvent e) { clearSailing(e.getPlayer().getUniqueId()); walking.remove(e.getPlayer().getUniqueId()); }
+    public void teleport(PlayerTeleportEvent e) { clearSailing(e.getPlayer().getUniqueId()); walking.remove(e.getPlayer().getUniqueId()); checkSailing(e.getPlayer()); }
     @EventHandler(priority = EventPriority.MONITOR)
-    public void world(PlayerChangedWorldEvent e) { travel.remove(e.getPlayer().getUniqueId()); walking.remove(e.getPlayer().getUniqueId()); }
+    public void world(PlayerChangedWorldEvent e) { travel.remove(e.getPlayer().getUniqueId()); walking.remove(e.getPlayer().getUniqueId()); checkSailing(e.getPlayer()); }
     @EventHandler(priority = EventPriority.MONITOR)
-    public void respawn(PlayerRespawnEvent e) { travel.remove(e.getPlayer().getUniqueId()); walking.remove(e.getPlayer().getUniqueId()); }
+    public void respawn(PlayerRespawnEvent e) { travel.remove(e.getPlayer().getUniqueId()); walking.remove(e.getPlayer().getUniqueId()); checkSailing(e.getPlayer()); }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void mount(EntityMountEvent event) {
+        if (event.getMount() instanceof Boat && event.getEntity() instanceof Player player) checkSailing(player);
+    }
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void dismount(EntityDismountEvent event) {
+        if (event.getDismounted() instanceof Boat && event.getEntity() instanceof Player player) {
+            clearSailing(player.getUniqueId()); checkSailing(player);
+        }
+    }
+    private void checkSailing(Player player) {
+        UUID id = player.getUniqueId();
+        if (sailingChecks.containsKey(id) || plugin.registry().rewards(SAIL).isEmpty()) return;
+        // Mount events run before the passenger list has changed.
+        sailingChecks.put(id, Bukkit.getScheduler().runTask(plugin, () -> {
+            sailingChecks.remove(id);
+            trackSailing(player);
+        }));
+    }
+    private void trackSailing(Player player) {
+        UUID id = player.getUniqueId();
+        if (!player.isOnline() || !(player.getVehicle() instanceof Boat) || plugin.registry().rewards(SAIL).isEmpty()) {
+            removeSailor(id); return;
+        }
+        sailors.put(id, player);
+        if (!travel.containsKey(id)) sampleSailing(player);
+        if (sailingTask == null) {
+            long interval = plugin.settings().getLong("rules.travel-sample-ticks");
+            sailingTask = Bukkit.getScheduler().runTaskTimer(plugin, this::sampleTravel, interval, interval);
+        }
+    }
+    private void stopSailingTaskIfIdle() {
+        if (sailors.isEmpty() && sailingTask != null) { sailingTask.cancel(); sailingTask = null; }
+    }
+    private void removeSailor(UUID id) {
+        var check = sailingChecks.remove(id); if (check != null) check.cancel();
+        sailors.remove(id); clearSailing(id); stopSailingTaskIfIdle();
+    }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void move(PlayerMoveEvent e) {
         if (e instanceof PlayerTeleportEvent || e.isCancelled() || !e.hasChangedPosition()) return;
+        if (plugin.registry().rewards(TRAVEL).isEmpty()) return;
         Player player = e.getPlayer();
-        if (!plugin.eligible(player) || player.getVehicle() != null || player.isFlying() || player.isGliding()
+        if (player.getVehicle() != null || player.isFlying() || player.isGliding()
                 || player.isRiptiding() || player.isInWater() || player.isSwimming() || player.getFallDistance() > 3
                 || player.hasPotionEffect(org.bukkit.potion.PotionEffectType.LEVITATION)
                 || player.hasPotionEffect(org.bukkit.potion.PotionEffectType.SLOW_FALLING)) return;
@@ -152,19 +198,27 @@ public final class ActivityListener implements Listener {
         var previous = walking.get(player.getUniqueId());
         double used = previous == null || previous.second() != second ? 0 : previous.distance();
         double maximum = plugin.settings().getDouble("rules.maximum-walk-blocks-per-sample", 12);
-        if (distance > maximum || used + distance > maximum + 1e-9) return;
+        if (distance > maximum || used + distance > maximum + 1e-9 || !plugin.eligible(player)) return;
         walking.put(player.getUniqueId(), new WalkWindow(second, used + distance));
-        plugin.award(player, TRAVEL, null, null, distance);
+        plugin.awardEligible(player, TRAVEL, distance);
     }
 
     public void sampleTravel() {
-        for (Player player : Bukkit.getOnlinePlayers()) sampleSailing(player);
+        if (sailors.isEmpty()) { stopSailingTaskIfIdle(); return; }
+        for (var iterator = sailors.entrySet().iterator(); iterator.hasNext();) {
+            var entry = iterator.next(); var player = entry.getValue();
+            if (!player.isOnline() || !(player.getVehicle() instanceof Boat)) {
+                iterator.remove(); clearSailing(entry.getKey());
+            } else sampleSailing(player);
+        }
+        stopSailingTaskIfIdle();
     }
     public void sampleSailing(Player player) {
         UUID id = player.getUniqueId();
-        if (!plugin.eligible(player) || player.isFlying() || player.isGliding() || player.isRiptiding()) { clearSailing(id); return; }
+        if (player.isFlying() || player.isGliding() || player.isRiptiding()) { clearSailing(id); return; }
         var vehicle = player.getVehicle();
         if (!(vehicle instanceof Boat) || vehicle.getPassengers().isEmpty() || vehicle.getPassengers().getFirst() != player || !vehicle.isInWater()) { clearSailing(id); return; }
+        if (!plugin.eligible(player)) { clearSailing(id); return; }
         var location = player.getLocation();
         UUID vehicleId = vehicle.getUniqueId();
         var previous = travel.get(id);
@@ -181,11 +235,19 @@ public final class ActivityListener implements Listener {
         double accumulated = previous.pending() + distance;
         if (accumulated + 1e-9 < plugin.settings().getDouble("rules.travel-minimum-displacement", 0.5))
             travel.put(id, new TravelSample(player, location.clone(), vehicleId, accumulated));
-        else if (accumulated > 0) plugin.award(player, SAIL, null, null, accumulated);
+        else if (accumulated > 0) plugin.awardEligible(player, SAIL, accumulated);
     }
     private void flushSailing(TravelSample sample) {
         if (sample.pending() > 0) plugin.award(sample.player(), SAIL, null, null, sample.pending());
     }
     private void clearSailing(UUID id) { var previous = travel.remove(id); if (previous != null) flushSailing(previous); }
-    public void resetTravel() { travel.values().forEach(this::flushSailing); travel.clear(); walking.clear(); }
+    public void stopTravel() {
+        if (sailingTask != null) { sailingTask.cancel(); sailingTask = null; }
+        sailingChecks.values().forEach(BukkitTask::cancel); sailingChecks.clear(); sailors.clear();
+        travel.values().forEach(this::flushSailing); travel.clear(); walking.clear();
+    }
+    public void resetTravel() {
+        stopTravel();
+        if (!plugin.registry().rewards(SAIL).isEmpty()) for (Player player : Bukkit.getOnlinePlayers()) trackSailing(player);
+    }
 }

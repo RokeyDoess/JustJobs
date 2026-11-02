@@ -26,8 +26,10 @@ public final class BossRewards implements Listener {
     }
     static boolean isBoss(EntityType type) { return type == EntityType.ENDER_DRAGON || type == EntityType.WITHER; }
     static boolean handles(JobRegistry registry, EntityType type) {
-        return isBoss(type) && registry.jobs().stream().flatMap(job -> job.rules().stream())
-                .anyMatch(rule -> rule.matches(JobRegistry.Activity.BOSS_KILL, null, type));
+        if (!isBoss(type)) return false;
+        for (var rewards : registry.rewards(JobRegistry.Activity.BOSS_KILL)) for (var rule : rewards.rules())
+            if (rule.matches(JobRegistry.Activity.BOSS_KILL, null, type)) return true;
+        return false;
     }
     private boolean eligibleSpawn(org.bukkit.entity.LivingEntity boss) {
         if (plugin.settings().getBoolean("rules.reward-spawner-mobs", false)) return true;

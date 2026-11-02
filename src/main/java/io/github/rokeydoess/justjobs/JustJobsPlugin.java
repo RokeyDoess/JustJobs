@@ -172,8 +172,6 @@ public final class JustJobsPlugin extends JavaPlugin {
         scheduled.add(Bukkit.getScheduler().runTaskTimer(this, this::flushPayouts, 1, 1));
         scheduled.add(Bukkit.getScheduler().runTaskTimer(this, this::expireBars, 10, 10));
         scheduled.add(Bukkit.getScheduler().runTaskTimer(this, natural::flush, 100, 100));
-        scheduled.add(Bukkit.getScheduler().runTaskTimer(this, activities::sampleTravel,
-                settings.getLong("rules.travel-sample-ticks"), settings.getLong("rules.travel-sample-ticks")));
         activities.resetTravel();
     }
 
@@ -221,6 +219,11 @@ public final class JustJobsPlugin extends JavaPlugin {
         if (!eligible(player) || !Double.isFinite(units) || units <= 0) return;
         award(profile(player), player, activity, material, entity, units, naturalBlock, detail);
     }
+    // Movement has already checked eligibility in the same event; don't query permissions twice.
+    void awardEligible(Player player, JobRegistry.Activity activity, double units) {
+        if (!storageFailed && Double.isFinite(units) && units > 0)
+            award(profile(player), player, activity, null, null, units, true, null);
+    }
     public void awardProcessed(UUID owner, org.bukkit.World world, JobRegistry.Activity activity, Material material, double units) {
         if (storageFailed || !Double.isFinite(units) || units <= 0 || settings.getStringList("rules.excluded-worlds").contains(world.getName())) return;
         var profile = players.get(owner);
@@ -234,21 +237,23 @@ public final class JustJobsPlugin extends JavaPlugin {
     }
     private void award(PlayerProfile profile, Player player, JobRegistry.Activity activity, Material material, EntityType entity, double units, boolean naturalBlock, String detail) {
         long now = System.currentTimeMillis();
-        for (var job : registry.jobs()) {
+        for (var rewards : registry.rewards(activity)) {
+            var job = rewards.job();
             if (activity == JobRegistry.Activity.BLOCK_BREAK && job.naturalOnly() && !naturalBlock) continue;
             double rewardUnits = units;
-            if ((activity == JobRegistry.Activity.TRAVEL || activity == JobRegistry.Activity.SAIL) && job.rules().stream().anyMatch(r -> r.activity() == activity)) {
+            if (activity == JobRegistry.Activity.TRAVEL || activity == JobRegistry.Activity.SAIL) {
                 rewardUnits = profile.travel.add(job.id(), units, job.distancePerReward());
                 dirty.add(profile.id);
                 if (rewardUnits == 0) continue;
             }
             double xp = 0;
             BigDecimal money = BigDecimal.ZERO, bonus = BigDecimal.ZERO;
-            var bonusSources = new HashMap<String, BigDecimal>();
-            for (var rule : job.rules()) if (rule.matches(activity, material, entity, detail)) {
+            Map<String, BigDecimal> bonusSources = null;
+            for (var rule : rewards.rules()) if (rule.matches(activity, material, entity, detail)) {
                 xp += rule.xp() * rewardUnits;
                 BigDecimal amount = rule.money().multiply(BigDecimal.valueOf(rewardUnits));
                 if (rule.bonus()) {
+                    if (bonusSources == null) bonusSources = new HashMap<>();
                     bonus = bonus.add(amount);
                     String source = rule.description().isBlank() ? entity == null ? activity.name().toLowerCase(java.util.Locale.ROOT).replace('_', ' ')
                             : entity.name().toLowerCase(java.util.Locale.ROOT).replace('_', ' ') : rule.description();
@@ -261,15 +266,19 @@ public final class JustJobsPlugin extends JavaPlugin {
             if (!Double.isFinite(after)) continue;
             profile.xp.put(job.id(), after);
             boolean payday = paydayEnabled();
-            BigDecimal allowed = payday ? money : profile.earnings.credit(job.id(), money, hourlyLimit(job), now);
-            BigDecimal credited = profile.paycheck.earn(job.id(), allowed, hourlyLimit(job), now, paydayInterval(), payday);
+            BigDecimal limit = hourlyLimit(job);
+            BigDecimal allowed = payday ? money : profile.earnings.credit(job.id(), money, limit, now);
+            BigDecimal credited = profile.paycheck.earn(job.id(), allowed, limit, now, paydayInterval(), payday);
             // Keep rolling history so switching to immediate payouts doesn't grant a fresh hourly allowance.
             if (payday) profile.earnings.credit(job.id(), credited, BigDecimal.ZERO, now);
-            for (var source : bonusSources.entrySet()) credited = credited.add(profile.paycheck.earnBonus(job.id(), source.getKey(), source.getValue(), now, paydayInterval(), payday));
+            if (bonusSources != null) for (var source : bonusSources.entrySet()) credited = credited.add(profile.paycheck.earnBonus(job.id(), source.getKey(), source.getValue(), now, paydayInterval(), payday));
             profile.pending = profile.pending.add(credited);
             if (diagnostics != null) diagnostics.award(profile, job.id(), xp, money.add(bonus), credited);
             dirty.add(profile.id);
-            if (credited.signum() > 0) { payoutQueue.add(profile.id); unpaid.add(profile.id); }
+            if (credited.signum() > 0) {
+                unpaid.add(profile.id);
+                if (!payday || bonus.signum() > 0) payoutQueue.add(profile.id);
+            }
             var progress = job.progression().progress(after);
             int previousLevel = job.progression().progress(before).level();
             if (player != null && settings.getBoolean("feedback.level-up-chat", true) && profile.notifications && progress.level() > previousLevel) {
@@ -290,7 +299,7 @@ public final class JustJobsPlugin extends JavaPlugin {
                 boolean opening = display == null || !display.job().equals(job.id());
                 if (opening && !barCooldowns.acquire(player.getUniqueId(), job.id(), now, job.bossBarCooldownSeconds() * 1000)) continue;
                 var bar = display == null ? BossBar.bossBar(Component.empty(), 0, job.color(), BossBar.Overlay.PROGRESS) : display.bar();
-                boolean capped = hourlyLimit(job).signum() > 0 && capEarnings(profile, job.id(), now).compareTo(hourlyLimit(job)) >= 0;
+                boolean capped = limit.signum() > 0 && capEarnings(profile, job.id(), now).compareTo(limit) >= 0;
                 String capMessage = payday ? "Paycheck money limit reached" : "Hourly money limit reached";
                 bar.name(Component.text(job.name() + " • Level " + progress.level() + " • " + format(progress.xp()) + " / " + format(progress.required()) + " XP"
                         + (capped ? " • " + capMessage : "")));
@@ -305,11 +314,13 @@ public final class JustJobsPlugin extends JavaPlugin {
     }
 
     public void discoverBiome(Player player, String biome) {
-        if (!eligible(player) || !registry.rewards(JobRegistry.Activity.BIOME_DISCOVER, null, null, biome)) return;
+        var existing = players.get(player.getUniqueId());
+        if (existing != null && existing.biomes.contains(biome)) return;
+        if (!registry.rewards(JobRegistry.Activity.BIOME_DISCOVER, null, null, biome) || !eligible(player)) return;
         var profile = profile(player);
         if (!profile.biomes.add(biome)) return;
         dirty.add(profile.id);
-        award(player, JobRegistry.Activity.BIOME_DISCOVER, null, null, 1, biome);
+        award(profile, player, JobRegistry.Activity.BIOME_DISCOVER, null, null, 1, true, biome);
     }
 
     public static String format(double value) { return String.format(java.util.Locale.ROOT, "%,.1f", value); }
@@ -324,8 +335,15 @@ public final class JustJobsPlugin extends JavaPlugin {
     }
 
     private void expireBars() {
+        if (bars.isEmpty() && !levelMessages.hasPending()) return;
         long now = System.currentTimeMillis();
-        for (UUID id : new ArrayList<>(bars.keySet())) if (bars.get(id).expires() <= now || Bukkit.getPlayer(id) == null) hideBar(id);
+        for (var iterator = bars.entrySet().iterator(); iterator.hasNext();) {
+            var entry = iterator.next(); var player = Bukkit.getPlayer(entry.getKey());
+            if (entry.getValue().expires() <= now || player == null) {
+                iterator.remove();
+                if (player != null) player.hideBossBar(entry.getValue().bar());
+            }
+        }
         for (UUID id : levelMessages.pendingPlayers()) {
             var player = Bukkit.getPlayer(id);
             if (player == null) levelMessages.forget(id);
@@ -385,7 +403,7 @@ public final class JustJobsPlugin extends JavaPlugin {
         long now = System.currentTimeMillis();
         if (diagnostics != null) diagnostics.tick(now);
         if (now >= paydayBoundary) { paydayBoundary = Paycheck.next(now, paydayInterval()); queueUnpaid(); }
-        if (economy == null || storageFailed || paymentBatchInFlight) return;
+        if (payoutQueue.isEmpty() || economy == null || storageFailed || paymentBatchInFlight) return;
         int budget = 25;
         var reservations = new ArrayList<DataStore.Reservation>();
         var candidates = payoutQueue.iterator();
@@ -547,7 +565,7 @@ public final class JustJobsPlugin extends JavaPlugin {
         scheduled.forEach(BukkitTask::cancel);
         if (workstations != null) workstations.flush();
         if (processing != null) processing.flush();
-        if (activities != null) activities.resetTravel();
+        if (activities != null) activities.stopTravel();
         for (UUID id : new ArrayList<>(bars.keySet())) hideBar(id);
         for (var player : Bukkit.getOnlinePlayers()) if (player.getOpenInventory().getTopInventory().getHolder() instanceof JobsMenu.Page) player.closeInventory();
         if (worker != null) {

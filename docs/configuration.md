@@ -143,6 +143,8 @@ Your economy must make deposits visible in its Vault balance immediately. Vault 
 
 Exploring and Sailing update every 500 blocks by default. Each job's `distance-per-reward` changes the update interval. Rule rates stay per block, so changing the interval doesn't change the total reward. Unfinished distance is saved. Slow sailing samples accumulate rather than being discarded.
 
+Sailing checks run only while players are riding boats. Boarding starts the timer, and the last rider leaving stops it. Reloading picks up players already in boats. `rules.travel-sample-ticks` controls the sampling interval; only the driver earns rewards.
+
 Walking earns 0.02 XP per block (10 XP per update); sailing earns 0.01 (5 XP per update). Their money rates are separate.
 
 Players start at level 1. Shared progression settings are in `config.yml`:

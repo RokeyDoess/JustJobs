@@ -410,7 +410,7 @@ public class ReleaseChecks extends JavaPlugin implements Listener {
         yaml.save(file); Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "jobs reload");
         check(previous.stream().allMatch(BukkitTask::isCancelled), "reload cancels every previous repeating task");
         var replacement = (List<BukkitTask>) field(jobs, "scheduled");
-        check(replacement.size() == 6 && replacement.stream().noneMatch(BukkitTask::isCancelled), "reload replaces all schedules without duplicates");
+        check(replacement.size() == 5 && replacement.stream().noneMatch(BukkitTask::isCancelled), "reload replaces base schedules without an idle sailing task");
         check(jobs.settings().getLong("rules.travel-sample-ticks") == 2, "new interval settings apply without a restart");
         var documented = YamlConfiguration.loadConfiguration(file);
         check(documented.getComments("feedback.payday-chat").stream().anyMatch(comment -> comment.contains("Allow payday messages")),

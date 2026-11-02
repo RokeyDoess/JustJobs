@@ -22,6 +22,7 @@ class LevelUpMessagesTest {
         messages.flush(FIRST, 11_000, 10_000, sent::add);
         assertEquals(List.of(2, 15), sent.stream().map(LevelUpMessages.Notice::level).toList());
         assertTrue(messages.pendingPlayers().isEmpty());
+        assertFalse(messages.hasPending());
     }
     @Test void jobsShareThePlayersSpacingWithoutStarvingOtherJobs() {
         offer(FIRST, "mining", 2); messages.flush(FIRST, 0, 10_000, sent::add);
@@ -39,9 +40,11 @@ class LevelUpMessagesTest {
     }
     @Test void leavingOrDisablingMessagesDiscardsPendingNotices() {
         offer(FIRST, "cooking", 2); offer(SECOND, "smithing", 2); messages.forget(FIRST);
+        assertTrue(messages.hasPending());
         messages.flush(FIRST, 10_000, 10_000, sent::add); assertTrue(sent.isEmpty());
         assertEquals(java.util.Set.of(SECOND), messages.pendingPlayers());
         messages.clear(); assertTrue(messages.pendingPlayers().isEmpty());
+        assertFalse(messages.hasPending());
         messages.flush(SECOND, 10_000, 10_000, sent::add); assertTrue(sent.isEmpty());
     }
 }

@@ -14,10 +14,12 @@ final class LevelUpMessages {
         Long lastSent;
     }
     private final Map<UUID, State> states = new HashMap<>();
+    private final Set<UUID> pending = new java.util.HashSet<>();
 
     void offer(UUID player, Notice notice) {
         var state = states.computeIfAbsent(player, ignored -> new State());
         state.pending.merge(notice.job(), notice, (old, latest) -> latest.level() >= old.level() ? latest : old);
+        pending.add(player);
     }
 
     void flush(UUID player, long now, long intervalMillis, Consumer<Notice> send) {
@@ -29,13 +31,13 @@ final class LevelUpMessages {
             state.lastSent = now; send.accept(notice);
             if (intervalMillis > 0) break;
         }
+        if (state.pending.isEmpty()) pending.remove(player);
     }
 
     Set<UUID> pendingPlayers() {
-        var result = new java.util.HashSet<UUID>();
-        states.forEach((id, state) -> { if (!state.pending.isEmpty()) result.add(id); });
-        return result;
+        return Set.copyOf(pending);
     }
-    void forget(UUID player) { states.remove(player); }
-    void clear() { states.clear(); }
+    boolean hasPending() { return !pending.isEmpty(); }
+    void forget(UUID player) { states.remove(player); pending.remove(player); }
+    void clear() { states.clear(); pending.clear(); }
 }

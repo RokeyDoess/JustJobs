@@ -110,7 +110,7 @@ public final class AdditionalActivities implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void biome(PlayerMoveEvent event) {
-        if (event instanceof PlayerTeleportEvent || !event.hasChangedBlock() || !plugin.eligible(event.getPlayer())) return;
+        if (event instanceof PlayerTeleportEvent || !event.hasChangedBlock() || plugin.registry().rewards(BIOME_DISCOVER).isEmpty()) return;
         plugin.discoverBiome(event.getPlayer(), event.getTo().getBlock().getBiome().getKey().toString());
     }
 }

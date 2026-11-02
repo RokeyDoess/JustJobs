@@ -5,9 +5,33 @@ import org.bukkit.entity.EntityType;
 import org.junit.jupiter.api.Test;
 import java.math.BigDecimal;
 import java.util.Set;
+import java.util.List;
+import java.util.ArrayList;
+import net.kyori.adventure.bossbar.BossBar;
 import static org.junit.jupiter.api.Assertions.*;
 
 class JobRuleTest {
+    @Test void activityIndexPreservesOverlappingRulesJobsAndMatchingOrder() {
+        var dirt = new JobRegistry.Rule(JobRegistry.Activity.BLOCK_BREAK, Set.of(Material.DIRT), Set.of(), false, 1, BigDecimal.ONE, "", Set.of(), Set.of());
+        var sand = new JobRegistry.Rule(JobRegistry.Activity.BLOCK_BREAK, Set.of(Material.SAND), Set.of(), false, 2, BigDecimal.TEN, "", Set.of(), Set.of(), true);
+        var travel = new JobRegistry.Rule(JobRegistry.Activity.TRAVEL, Set.of(), Set.of(), true, 1, BigDecimal.ZERO, "", Set.of(), Set.of());
+        var wildcard = new JobRegistry.Rule(JobRegistry.Activity.BLOCK_BREAK, Set.of(), Set.of(), true, 3, BigDecimal.ONE, "", Set.of(), Set.of());
+        var first = new JobRegistry.Job("first", "First", "", Material.DIRT, BossBar.Color.BLUE, true, null, 500, 0, Progression.defaults(), List.of(dirt, travel, sand));
+        var second = new JobRegistry.Job("second", "Second", "", Material.SAND, BossBar.Color.RED, false, null, 150, 0, Progression.defaults(), List.of(wildcard));
+        var input = new ArrayList<>(List.of(first, second)); var registry = new JobRegistry(input); input.clear();
+        assertEquals(List.of(first, second), registry.jobs());
+        assertEquals(List.of(dirt, sand), registry.rewards(JobRegistry.Activity.BLOCK_BREAK).getFirst().rules());
+        assertEquals(second, registry.rewards(JobRegistry.Activity.BLOCK_BREAK).getLast().job());
+        assertEquals(List.of(travel), registry.rewards(JobRegistry.Activity.TRAVEL).getFirst().rules());
+        for (var activity : JobRegistry.Activity.values()) for (var material : new Material[]{null, Material.DIRT, Material.SAND, Material.STONE}) {
+            boolean expected = registry.jobs().stream().flatMap(job -> job.rules().stream())
+                    .anyMatch(rule -> rule.matches(activity, material, null) && (rule.xp() > 0 || rule.money().signum() > 0));
+            assertEquals(expected, registry.rewards(activity, material, null));
+        }
+        assertSame(first, registry.get("first")); assertNull(registry.get(null));
+        assertThrows(UnsupportedOperationException.class, () -> registry.rewards(JobRegistry.Activity.BLOCK_BREAK).clear());
+        assertThrows(UnsupportedOperationException.class, () -> registry.rewards(JobRegistry.Activity.BLOCK_BREAK).getFirst().rules().clear());
+    }
     @Test void operationsNeverMatchOtherActivitiesAndNeedTheCorrectOperation() {
         var rule = new JobRegistry.Rule(JobRegistry.Activity.SMITH, Set.of(), Set.of(), true, 1, BigDecimal.ONE, "",
                 Set.of(), Set.of("upgrade"));

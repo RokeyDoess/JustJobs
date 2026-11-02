@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.1.3 (2026-11-02)
+
+- Sailing sampling starts when players board boats and stops when the last rider leaves. Empty payment queues and inactive feedback skip unnecessary allocation and cleanup scans.
+- Indexed jobs and rules by activity, so frequent actions don't scan unrelated jobs or allocate unused bonus maps.
+- Removed duplicate permission checks from movement and biome discovery. Known biomes and sailing checks for players on land skip unnecessary eligibility work; permission changes still apply immediately.
+- Normal payday earnings no longer trigger a payment check after every reward. Scheduled payouts and automatic retries keep their timing; bonuses still pay immediately.
+- Updated SQLite JDBC to 3.54.1.0 and Maven Surefire to 3.6.1.
+
 ## 1.1.2 (2026-10-30)
 
 - Hunting now rewards boss fights: 200 XP and 50 coins for the Ender Dragon, 50 XP and 12.50 coins for the Wither. Every eligible player who damaged the boss gets the full reward, including offline contributors. Participation survives restarts.

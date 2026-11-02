@@ -14,9 +14,33 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.EnumMap;
+import java.util.HashMap;
 import java.util.Set;
 
-public record JobRegistry(List<Job> jobs) {
+public final class JobRegistry {
+    private final List<Job> jobs;
+    private final Map<String, Job> byId;
+    private final Map<Activity, List<Rewards>> byActivity;
+    public record Rewards(Job job, List<Rule> rules) { }
+
+    public JobRegistry(List<Job> jobs) {
+        this.jobs = List.copyOf(jobs);
+        var ids = new HashMap<String, Job>();
+        var activities = new EnumMap<Activity, List<Rewards>>(Activity.class);
+        for (var job : jobs) {
+            ids.putIfAbsent(job.id(), job);
+            var rules = new EnumMap<Activity, List<Rule>>(Activity.class);
+            for (var rule : job.rules()) rules.computeIfAbsent(rule.activity(), ignored -> new ArrayList<>()).add(rule);
+            rules.forEach((activity, matching) -> activities.computeIfAbsent(activity, ignored -> new ArrayList<>())
+                    .add(new Rewards(job, List.copyOf(matching))));
+        }
+        activities.replaceAll((activity, matching) -> List.copyOf(matching));
+        byId = Map.copyOf(ids); byActivity = Map.copyOf(activities);
+    }
+    public List<Job> jobs() { return jobs; }
+    public List<Rewards> rewards(Activity activity) { return byActivity.getOrDefault(activity, List.of()); }
     public enum Activity {
         BLOCK_BREAK, BLOCK_PLACE, CRAFT, CROP_HARVEST, MOB_KILL, BREED, FISH, PLAYER_KILL, TRADE, TRAVEL, SAIL, ENCHANT,
         SHEAR, BEEHIVE_HARVEST, TAME, STONECUT, LOOM, BRUSH, SMITH, ANVIL_REPAIR, CURE_VILLAGER, CARTOGRAPHY, BIOME_DISCOVER,
@@ -48,13 +72,14 @@ public record JobRegistry(List<Job> jobs) {
     public record Job(String id, String name, String description, Material icon, BossBar.Color color, boolean naturalOnly,
                       BigDecimal hourlyLimit, double distancePerReward, long bossBarCooldownSeconds, Progression progression, List<Rule> rules) { }
 
-    public Job get(String id) { return jobs.stream().filter(j -> j.id.equals(id)).findFirst().orElse(null); }
+    public Job get(String id) { return id == null ? null : byId.get(id); }
     public boolean rewards(Activity activity, Material material, EntityType entity) {
         return rewards(activity, material, entity, null);
     }
     public boolean rewards(Activity activity, Material material, EntityType entity, String detail) {
-        return jobs.stream().flatMap(j -> j.rules().stream())
-                .anyMatch(r -> r.matches(activity, material, entity, detail) && (r.xp() > 0 || r.money().signum() > 0));
+        for (var rewards : rewards(activity)) for (var rule : rewards.rules())
+            if (rule.matches(activity, material, entity, detail) && (rule.xp() > 0 || rule.money().signum() > 0)) return true;
+        return false;
     }
 
     public record Loaded(JobRegistry registry, YamlConfiguration configuration, boolean upgraded) { }
