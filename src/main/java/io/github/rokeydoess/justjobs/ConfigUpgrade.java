@@ -6,8 +6,8 @@ import org.bukkit.configuration.file.YamlConfiguration;
 final class ConfigUpgrade {
     private ConfigUpgrade() { }
     static boolean settings(YamlConfiguration yaml) {
-        long version = ConfigValues.integer(yaml, "config-version", 0, 0, 4);
-        if (version == 4) return false;
+        long version = ConfigValues.integer(yaml, "config-version", 0, 0, 5);
+        if (version == 5) return false;
         if (version == 0) {
             yaml.set("progression.growth", null);
             if (!yaml.contains("progression.first-level-xp") || yaml.get("progression.first-level-xp") instanceof Number number && number.doubleValue() == 10)
@@ -17,25 +17,26 @@ final class ConfigUpgrade {
         }
         if (version < 2 && (!yaml.contains("rules.reward-spawner-mobs") || Boolean.TRUE.equals(yaml.get("rules.reward-spawner-mobs"))))
             yaml.set("rules.reward-spawner-mobs", false);
-        if (version < 3 && yaml.contains("economy.hourly-income-limit-per-job")
-                && ConfigValues.money(yaml, "economy.hourly-income-limit-per-job", null).compareTo(new java.math.BigDecimal("100")) == 0)
-            yaml.set("economy.hourly-income-limit-per-job", "25");
-        boolean retuned = matchesNumber(yaml, "progression.first-level-xp", 25)
+        String capKey = "economy.hourly-income-limit-per-job";
+        var formerCap = java.math.BigDecimal.valueOf(version < 3 ? 100 : 25);
+        if (yaml.contains(capKey) && ConfigValues.money(yaml, capKey, null).compareTo(formerCap) == 0)
+            yaml.set(capKey, "50");
+        boolean retuned = version < 4 && matchesNumber(yaml, "progression.first-level-xp", 25)
                 && matchesNumber(yaml, "progression.early-level-xp", 150)
                 && matchesNumber(yaml, "progression.plateau-xp", 2500)
                 && matchesNumber(yaml, "progression.early-level", 10) && matchesNumber(yaml, "progression.plateau-level", 50);
         if (retuned) {
             yaml.set("progression.first-level-xp", 10); yaml.set("progression.early-level-xp", 40); yaml.set("progression.plateau-xp", 200);
         }
-        yaml.set("config-version", 4);
+        yaml.set("config-version", 5);
         return retuned;
     }
     static boolean jobs(YamlConfiguration yaml) {
         return jobs(yaml, Progression.defaults(), new Progression(25, 150, 2500, 10, 50, 1));
     }
     static boolean jobs(YamlConfiguration yaml, Progression shared, Progression former) {
-        long version = ConfigValues.integer(yaml, "config-version", 0, 0, 15);
-        if (version == 15) return false;
+        long version = ConfigValues.integer(yaml, "config-version", 0, 0, 17);
+        if (version == 17) return false;
         if (version < 2) upgradeOriginalJobs(yaml, version);
         var jobs = yaml.getConfigurationSection("jobs");
         if (jobs != null && !jobs.getKeys(false).isEmpty()) {
@@ -68,10 +69,33 @@ final class ConfigUpgrade {
             if (version < 13) retuneXp(yaml, defaults, shared, former);
             if ("Make and improve potions with ingredients you load by hand.".equals(yaml.getString("jobs.brewing.description")))
                 yaml.set("jobs.brewing.description", defaults.getString("jobs.brewing.description"));
-            addBossRules(yaml, defaults);
+            if (version < 15) addBossRules(yaml, defaults);
+            if (version < 16) retuneBoss(jobs, "WITHER", "Wither", 50, "12.5", "10");
+            retuneBoss(jobs, "ENDER_DRAGON", "Ender Dragon", 200, "50", "25");
         }
-        yaml.set("config-version", 15);
+        yaml.set("config-version", 17);
         return true;
+    }
+    private static void retuneBoss(org.bukkit.configuration.ConfigurationSection jobs, String entity, String name, int xp, String previous, String money) {
+        for (String id : java.util.List.of("hunting", "hunter")) {
+            var job = jobs.getConfigurationSection(id);
+            if (job == null || !job.isList("rules") || job.getList("rules").size() != job.getMapList("rules").size()) continue;
+            var rules = new java.util.ArrayList<Map<?, ?>>(job.getMapList("rules"));
+            for (int i = 0; i < rules.size(); i++) {
+                var raw = rules.get(i);
+                if (!raw.keySet().equals(java.util.Set.of("activity", "description", "entities", "xp", "money", "bonus"))
+                        || !"boss-kill".equals(raw.get("activity")) || !Boolean.TRUE.equals(raw.get("bonus"))
+                        || !(name + " defeated (each contributor)").equals(raw.get("description"))
+                        || !java.util.List.of(entity).equals(raw.get("entities"))) continue;
+                try {
+                    if (new java.math.BigDecimal(String.valueOf(raw.get("money"))).compareTo(new java.math.BigDecimal(previous)) != 0
+                            || new java.math.BigDecimal(String.valueOf(raw.get("xp"))).compareTo(java.math.BigDecimal.valueOf(xp)) != 0) continue;
+                    var rule = new java.util.LinkedHashMap<String, Object>(); raw.forEach((key, value) -> rule.put(key.toString(), value));
+                    rule.put("money", money); rules.set(i, rule);
+                } catch (NumberFormatException ignored) { /* Normal validation reports invalid rewards. */ }
+            }
+            job.set("rules", rules);
+        }
     }
     private static void addBossRules(YamlConfiguration yaml, YamlConfiguration defaults) {
         var jobs = yaml.getConfigurationSection("jobs");

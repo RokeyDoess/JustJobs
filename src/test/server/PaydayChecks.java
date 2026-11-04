@@ -48,8 +48,25 @@ public final class PaydayChecks extends ReleaseChecks {
         var duelRule = new java.util.LinkedHashMap<String, Object>();
         jobConfig.getMapList("jobs.dueling.rules").getFirst().forEach((key, value) -> duelRule.put(key.toString(), value));
         duelRule.put("money", "5"); jobConfig.set("jobs.dueling.rules", List.of(duelRule)); jobConfig.save(jobFile);
+        var huntingRules = new ArrayList<Map<String, Object>>();
+        for (var raw : jobConfig.getMapList("jobs.hunting.rules")) {
+            var rule = new java.util.LinkedHashMap<String, Object>(); raw.forEach((key, value) -> rule.put(key.toString(), value));
+            if (List.of("WITHER").equals(rule.get("entities"))) rule.put("money", "12.5");
+            if (List.of("ENDER_DRAGON").equals(rule.get("entities"))) rule.put("money", "50");
+            huntingRules.add(rule);
+        }
+        jobConfig.set("jobs.hunting.rules", huntingRules); jobConfig.save(jobFile);
         config.save(file); reload();
         paycheckPreviewChecks();
+        var carriedPlayer = player(new java.util.UUID(52, 1), "CarriedBonus");
+        var carried = jobs.profile(carriedPlayer);
+        long next = jobs.nextPayday();
+        carried.paycheck.restore(next, "exploring", new BigDecimal("0.125"), true);
+        carried.paycheck.restore(next, "mining", new BigDecimal("0.03"), true);
+        carried.paycheck.restore(next, "sailing", new BigDecimal("0.345"), true);
+        carried.pending = new BigDecimal("0.50");
+        jobs.award(carriedPlayer, JobRegistry.Activity.PLAYER_KILL, null, null, 1);
+        jobs.award(carriedPlayer, JobRegistry.Activity.BOSS_KILL, null, org.bukkit.entity.EntityType.WITHER, 1);
         var bonusPlayer = player(BONUS, "BonusWallet");
         rejected.add(BONUS);
         jobs.award(bonusPlayer, JobRegistry.Activity.PLAYER_KILL, null, null, 1);
@@ -109,10 +126,21 @@ public final class PaydayChecks extends ReleaseChecks {
         check(current.getItem(39).getItemMeta().lore().stream().anyMatch(c -> plain(c).equals("Payout so far: " + amount)), label);
     }
     void beforePayday() throws Exception {
-        check(balances.isEmpty() && profile.pending.compareTo(new BigDecimal("6.25")) == 0, "whole earnings wait for payday instead of paying immediately");
+        var carried = jobs.players().get(new java.util.UUID(52, 1));
+        check(balances.get(carried.id).compareTo(new BigDecimal("12")) == 0
+                        && carried.pending.compareTo(new BigDecimal("6")) == 0
+                        && carried.paycheck.snapshot().current().get("dueling").compareTo(new BigDecimal("5")) == 0,
+                "a Wither bonus pays alone while old remainders and current-period earnings stay held");
+        check(Paycheck.byJob(carried.paycheck.snapshot().current()).get("hunting").compareTo(new BigDecimal("0.5")) == 0
+                        && jobs.capEarnings(carried, "hunting", System.currentTimeMillis()).signum() == 0,
+                "bonus fractions enter the source job's next paycheck without using its cap");
+        check(balances.size() == 1 && balances.containsKey(carried.id) && profile.pending.compareTo(new BigDecimal("6.25")) == 0,
+                "only the bonus pays early; normal earnings and old remainders wait for payday");
         var bonus = jobs.players().get(BONUS);
-        check(bonus.pending.compareTo(new BigDecimal("67.5")) == 0 && bonus.paycheck.available().compareTo(new BigDecimal("62.5")) == 0,
+        check(bonus.pending.compareTo(new BigDecimal("67.5")) == 0 && bonus.paycheck.available().compareTo(new BigDecimal("62")) == 0,
                 "rejected bonuses remain released without releasing normal paycheck earnings");
+        check(jobs.nextPaycheckAmount(bonus).compareTo(new BigDecimal("5")) == 0,
+                "the next paycheck excludes an immediate bonus waiting to retry");
         var bonusPlayer = player(BONUS, "BonusWallet");
         int before = components.getOrDefault(BONUS, List.of()).size();
         jobs.notifyPayment(bonusPlayer, bonus, BigDecimal.ZERO, bonus.paycheck.snapshot().due());
@@ -121,7 +149,7 @@ public final class PaydayChecks extends ReleaseChecks {
         var menus = new JobsMenu(jobs); menus.open(player, false, 0, null);
         check(current.getItem(39).getType() == Material.CLOCK && current.getItem(39).getItemMeta().lore().stream().anyMatch(c -> plain(c).equals("Payout so far: $6.00")),
                 "Next paycheck shows the actual whole-number payout earned so far");
-        check(current.getItem(23).getItemMeta().lore().stream().anyMatch(c -> plain(c).equals("Earned this pay period: $5.00 / $100.00")),
+        check(current.getItem(jobSlot("dueling")).getItemMeta().lore().stream().anyMatch(c -> plain(c).equals("Earned this paycheck: $5.00 / $100.00")),
                 "the jobs menu describes the active paycheck cap period");
         menus.click(new InventoryClickEvent(view(), InventoryType.SlotType.CONTAINER, 36, ClickType.LEFT, InventoryAction.PICKUP_ALL));
         later(2, () -> {
@@ -131,6 +159,7 @@ public final class PaydayChecks extends ReleaseChecks {
                 check(!profile.paydayChat && current.getSize() == 27, "payday chat toggles from settings without leaving the menu");
                 jobs.togglePaydayChat(player); check(profile.paydayChat, "payday chat can be enabled again");
                 for (var p : List.of(profile, jobs.players().get(OFFLINE), partial)) p.paycheck.restoreNext(System.currentTimeMillis() - 1);
+                carried.paycheck.restoreNext(System.currentTimeMillis() - 1);
                 var capped = jobs.players().get(CAPPED);
                 capped.paycheck.restoreNext(System.currentTimeMillis() - 1);
                 check(jobs.capEarnings(capped, "dueling", System.currentTimeMillis()).signum() == 0,
@@ -146,6 +175,9 @@ public final class PaydayChecks extends ReleaseChecks {
         });
     }
     void afterPayday() throws Exception {
+        var carried = jobs.players().get(new java.util.UUID(52, 1));
+        check(balances.get(carried.id).compareTo(new BigDecimal("18")) == 0 && carried.pending.signum() == 0,
+                "the next payday pays both the bonus fraction and the old remainder with regular earnings");
         check(balances.get(CAPPED).compareTo(new BigDecimal("100")) == 0 && jobs.players().get(CAPPED).pending.compareTo(new BigDecimal("100")) == 0,
                 "the old capped paycheck pays while the new capped earnings wait for their own payday");
         check(balances.get(MAIN).compareTo(new BigDecimal("6")) == 0 && profile.pending.compareTo(new BigDecimal("5.25")) == 0,
@@ -175,7 +207,7 @@ public final class PaydayChecks extends ReleaseChecks {
     void afterRetry() throws Exception {
         var bonus = jobs.players().get(BONUS);
         check(balances.get(BONUS).compareTo(new BigDecimal("62")) == 0 && bonus.pending.compareTo(new BigDecimal("5.5")) == 0
-                        && bonus.paycheck.available().compareTo(new BigDecimal("0.5")) == 0,
+                        && bonus.paycheck.available().signum() == 0,
                 "bonuses retry and deposit before payday while normal earnings and fractional leftovers stay held");
         var bonusPlayer = player(BONUS, "BonusWallet");
         var sources = new Paycheck(); sources.earnBonus("hunting", "Hunting: Ender Dragon", new BigDecimal("50"), 1, 3_600_000, true);

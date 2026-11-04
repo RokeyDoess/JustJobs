@@ -1,8 +1,10 @@
 # Jobs themselves live in jobs.yml. /jobs reload applies every setting.
 # Times are in seconds unless marked otherwise.
 # Managed by JustJobs when upgrading settings. Leave this unchanged.
-config-version: 4
+config-version: 5
 economy:
+  # Scale all new money rewards, bonuses, and job caps. 0 stops new earnings; XP and saved money stay unchanged.
+  payout-multiplier: 1
   # Shown before money amounts in menus and messages. Use '' for no symbol.
   currency-symbol: '$'
   # Pay whole coins only; fractional earnings carry forward to later payouts.
@@ -13,7 +15,7 @@ economy:
   payday-interval-minutes: 60
   # Per player, per job: resets each payday, or uses a rolling hour if paydays are off.
   # The existing key name is kept for compatibility. 0 disables the cap; XP is never capped.
-  hourly-income-limit-per-job: '25'
+  hourly-income-limit-per-job: '50'
   # Retry interval for unpaid earnings. Normal earnings still wait for payday when enabled.
   payout-interval-seconds: 10
   # Allow payment messages in immediate-payout mode (payday-enabled: false).
@@ -42,6 +44,12 @@ feedback:
 display:
   # Default clock format: 12 for AM/PM or 24. Players can choose their own in Settings.
   time-format: 12
+  # Progress line in /jobs. Remove {bar} for text only, or use '' to hide the line.
+  job-progress-format: 'Level {level}  {bar}  {percent}%'
+  # Number of bar segments (1-20) and the character for each kind of segment.
+  job-progress-bar-length: 10
+  job-progress-bar-filled: '■'
+  job-progress-bar-empty: '□'
 storage:
   # Save interval for changed progress and unpaid earnings.
   autosave-seconds: 30

@@ -5,6 +5,7 @@ import java.util.List;
 
 final class MenuLayout {
     static final int SIZE = 45, CAPACITY = 27, INFO = 4, SETTINGS = 36, CLOSE = 44;
+    static final int GROUP_CAPACITY = 9;
     private MenuLayout() { }
     static List<Integer> entries(int count) {
         if (count < 0 || count > CAPACITY) throw new IllegalArgumentException("Menu holds at most 27 entries");
@@ -17,6 +18,9 @@ final class MenuLayout {
         return List.copyOf(slots);
     }
     static List<Integer> controls(int count) { return centered(4, count); }
+    static List<Integer> group(JobRegistry.Category category, int count) {
+        return centered(category.ordinal() + 1, count);
+    }
     static List<Integer> ranks(int count) {
         if (count < 0 || count > CAPACITY) throw new IllegalArgumentException("Menu holds at most 27 entries");
         var slots = new ArrayList<Integer>(count);
@@ -25,7 +29,7 @@ final class MenuLayout {
         return List.copyOf(slots);
     }
     private static List<Integer> centered(int row, int count) {
-        if (count < 0 || count > 7) throw new IllegalArgumentException("Row holds at most seven items");
+        if (count < 0 || count > GROUP_CAPACITY) throw new IllegalArgumentException("Row holds at most nine items");
         var slots = new ArrayList<Integer>(count);
         int start = 4 - count / 2;
         for (int i = 0; i < count; i++) {

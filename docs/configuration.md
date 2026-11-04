@@ -6,12 +6,14 @@ Settings live in `plugins/JustJobs/`. `jobs.yml` contains every job; `config.yml
 
 Change a rule's `xp` and `money` to tune its reward. Set a job's `enabled` to `false` to disable it while keeping saved progress.
 
+The menu groups jobs into Gathering, Crafting & Trade, and Adventure. Add `category: gathering`, `category: crafting`, or `category: adventure` inside a job to choose its row. Without it, the first rule's activity picks the group. Jobs keep their config order within each row, and groups larger than nine jobs use additional pages.
+
 | Job | Default money reward |
 | --- | --- |
 | Digging | 0.0085 per natural soil or sand block |
 | Mining | 0.006 per natural stone block; ores pay 0.03, 0.08, or 0.35 |
 | Treefelling | 0.075 per eligible log |
-| Hunting | 0.05 per hostile mob killed; boss bonuses of 50 per Ender Dragon and 12.50 per Wither, for each contributor |
+| Hunting | 0.05 per hostile mob killed; boss bonuses of 25 per Ender Dragon and 10 per Wither, for each contributor |
 | Dueling | 2.5 per player kill, with a 60-second cooldown between the same two players |
 | Trading | 0.10 per emerald spent with a villager |
 | Exploring | 0.00075 per block walked, awarded every 500 blocks; 0.25 per new biome; 0.05 per map expanded or locked |
@@ -41,6 +43,7 @@ Add another entry under `jobs:`. For example:
 ```yaml
   snow_digging:
     name: Snow Digging
+    category: gathering
     description: Dig natural snow blocks.
     enabled: true
     icon: SNOW_BLOCK
@@ -105,25 +108,33 @@ Direct inputs must be loaded while the player is eligible to earn. Known creativ
 
 ## Boss rewards and bonuses
 
-Hunting's Ender Dragon reward is 200 XP and 50 coins; the Wither gives 50 XP and 12.50 coins. Edit their `boss-kill` rules in `jobs.yml` to change either amount. Every eligible player who deals positive, uncancelled damage during that boss's lifetime gets the full reward on its death. It isn't split, and the finishing blow doesn't matter. Projectiles count for their shooter; nearby players who never damage it don't qualify. Participants stay recorded across reloads and restarts, and can receive credit while offline.
+Hunting's Ender Dragon reward is 200 XP and 25 coins; the Wither gives 50 XP and 10 coins. Edit their `boss-kill` rules in `jobs.yml` to change either amount. Every eligible player who deals positive, uncancelled damage during that boss's lifetime gets the full reward on its death. It isn't split, and the finishing blow doesn't matter. Projectiles count for their shooter; nearby players who never damage it don't qualify. Participants stay recorded across reloads and restarts, and can receive credit while offline.
 
-The boss rules use `bonus: true`. This reusable rule option pays immediately, outside the job money cap, without consuming its normal allowance. Set it to `false`, or leave it out, to use the usual cap and payday schedule. Bonuses still use normal payout rounding: whole-number mode pays 12 from a 12.50 bonus and keeps 0.50 toward the next payment. Failed deposits retry automatically without releasing normal paycheck earnings early.
+The boss rules use `bonus: true`. This reusable rule option pays immediately in a separate deposit, outside the job money cap, without consuming its normal allowance. Set it to `false`, or leave it out, to use the usual cap and payday schedule. Failed deposits retry automatically without releasing normal paycheck earnings early.
 
-After a confirmed bonus deposit, chat says `Bonus! $50 has been deposited into your account.` Hover over “Bonus!” to see its source. Custom rules use their `description` as the source. The amount is what actually arrived, and the menu marks bonus rates. `feedback.bonus-chat` controls these messages independently of payday chat.
+After a confirmed Dragon bonus, chat says `Bonus! $25 has been deposited into your account.` Hover over “Bonus!” to see its source. Custom rules use their `description` as the source. The amount is what actually arrived, and the menu marks bonus rates. `feedback.bonus-chat` controls these messages independently of payday chat.
 
-Player-summoned Withers count even when artificial mobs are excluded. Command, custom, egg, and spawner-created bosses follow `rules.reward-spawner-mobs`. Bosses covered by a `boss-kill` rule don't also earn a normal `mob-kill` reward. Existing Hunting configurations gain the defaults once; existing custom boss rules take precedence.
+In whole-number mode, a custom 12.50 bonus pays 12 immediately and adds 0.50 to its source job's next paycheck. That fraction stays outside the job cap and appears under that job in the payday breakdown. Old paycheck remainders stay separate from bonus deposits, so receiving a bonus doesn't trigger a partial payday. With fractional payouts enabled, the full bonus pays immediately to the precision supported by the economy provider. If scheduled paydays are disabled, bonus fractions join ordinary immediate earnings instead.
+
+Withers built with soul sand or soul soil and Wither skeleton skulls count even when artificial mobs are excluded. Bosses created with `/summon`, spawn eggs, spawners, or a custom plugin spawn don't count unless `rules.reward-spawner-mobs` is `true`. That setting also enables rewards for other artificial mobs. Bosses covered by a `boss-kill` rule don't also earn a normal `mob-kill` reward. Existing Hunting configurations gain the defaults once; existing custom boss rules take precedence.
+
+To test bonuses with the default settings, build a Wither or fight a naturally spawned or end-crystal-respawned Dragon. Deal damage while in Survival or Adventure mode; Creative hits don't qualify. A qualifying boss reward pays immediately, with the bonus message sent after a successful deposit.
 
 Damage must be attributed to a player. Anonymous explosions don't identify a contributor, and damage from before this update can't be recovered.
 
 ## Money and limits
 
-Players can earn 25 currency per job between paydays by default. Every job's allowance resets at the scheduled payday, including for offline players and when a deposit needs to retry. XP continues after the cap; excess money is not banked for later. The allowance survives reloads and restarts.
+`economy.payout-multiplier` scales every money reward, including bonuses, and every job cap. It defaults to `1`. Use `0.5` to halve both earnings and caps, or `2` to double them. Menus show the adjusted amounts. Set it to `0` to stop new money earnings while XP continues. Apply it with `/jobs reload`.
+
+The multiplier applies when rewards are earned. Saved earnings, fractional remainders, and pending deposits keep their original value. Money already counted toward a cap stays counted at that value, so lowering the multiplier during a pay period can leave a player at the new limit sooner. A cap set to `0` stays unlimited.
+
+Players can earn 50 currency per job between paydays by default. Every job's allowance resets at the scheduled payday, including for offline players and when a deposit needs to retry. Players keep earning XP after reaching the money cap. Excess money is not banked for later. The allowance survives reloads and restarts.
 
 Defaults aim for roughly 10–20 coins per player-hour of mixed survival play. That's a tuning target, not a global cap or a guaranteed income; farm output and play styles vary.
 
 With paydays disabled, caps use a rolling hour instead. That allowance returns in minute buckets, which can add up to a minute before older earnings expire.
 
-Set `economy.hourly-income-limit-per-job` in `config.yml`, or add `hourly-income-limit` inside a job to override it. These existing key names still apply in payday mode. Use `0` for no limit. A custom payday interval changes the cap period too: a two-hour payday allows 25 per job over those two hours, not 25 each hour.
+Set `economy.hourly-income-limit-per-job` in `config.yml`, or add `hourly-income-limit` inside a job to override it. These existing key names still apply in payday mode. Use `0` for no limit. With a two hour payday, the default allowance covers the full two hours.
 
 Paydays run every real-time hour by default, on the hour, for all players together. Offline players are included where the economy provider supports their accounts. Earnings made after the cutoff use the new allowance and wait for the following payday.
 
@@ -186,11 +197,15 @@ These are in `config.yml`, with short comments beside each setting. Missing comm
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
+| `economy.payout-multiplier` | 1 | Scale new rewards, bonuses, and job caps; `0` stops new money earnings. XP and saved money stay unchanged |
 | `economy.payout-interval-seconds` | 10 | Retry interval for unpaid earnings |
 | `economy.payday-enabled` | true | Hold new earnings for scheduled paydays |
 | `economy.payday-interval-minutes` | 60 | Minutes between shared paydays |
 | `economy.payout-chat` | false | Allow payment messages in immediate-payout mode |
 | `display.time-format` | 12 | Default clock format: `12` uses AM/PM; `24` uses a 24-hour clock. Players can override it in Settings |
+| `display.job-progress-format` | `Level {level}  {bar}  {percent}%` | Progress line on the main jobs menu. Omit `{bar}` for text only, or use `''` to hide the line |
+| `display.job-progress-bar-length` | 10 | Number of segments in the menu bar, from 1 to 20 |
+| `display.job-progress-bar-filled` / `display.job-progress-bar-empty` | `■` / `□` | One character each for filled and empty segments |
 | `feedback.payday-chat` | true | Allow payday messages |
 | `feedback.payday-chat-default` | true | Starting payday chat preference for new players |
 | `feedback.bonus-chat` | true | Allow confirmed bonus deposit messages, with the source shown on hover |
@@ -232,7 +247,7 @@ If you add crafting rules, avoid recipes that can be reversed or recolored repea
 
 Progress saves every 30 seconds and on normal shutdown. A crash can lose unsaved progress. Back up plugin data, worlds, and economy data together while stopped: block tracking, workstation ownership, and unfinished processing attribution live in world chunks, and paid money lives with your economy provider. The database backup alone doesn't include workstation inputs or owners.
 
-Older configs upgrade once. Recognized default rates and the former shared cap of 100 move to the new defaults; other custom values and saved progress stay. New default jobs are added if their IDs aren't already used. Existing rules for a new activity take precedence over adding its defaults. The processing update adds Cooking, Brewing, and Smithing's ingot rule. The popup update adds the 30-second Cooking and Smithing cooldowns where unset, plus Archaeology's pot rule if it has no block-breaking rules already. Review custom Engineering or Building selectors when upgrading from placement rewards.
+Older configs upgrade once. Recognized default rates and shared caps move to the new defaults. A shared cap matching the old default for its config version upgrades to 50. Custom values, job overrides, and saved progress stay. New default jobs are added if their IDs aren't already used. Existing rules for a new activity take precedence over adding its defaults. The processing update adds Cooking, Brewing, and Smithing's ingot rule. The popup update adds the 30-second Cooking and Smithing cooldowns where unset, plus Archaeology's pot rule if it has no block-breaking rules already. Review custom Engineering or Building selectors when upgrading from placement rewards.
 
 Back up job data before upgrading. Saved clock preferences and biome discoveries update the database format; older builds cannot open the newer database. Restore a matching pre-upgrade backup if rolling back to 1.0.2. Existing XP and money already earned aren't reduced by the new rates or cap.
 

@@ -69,8 +69,28 @@ public final class JobRegistry {
                     || (entity != null && entities.contains(entity)));
         }
     }
+    public enum Category {
+        GATHERING, CRAFTING, ADVENTURE;
+        static Category automatic(List<Rule> rules) {
+            if (rules.isEmpty()) return GATHERING;
+            return switch (rules.getFirst().activity()) {
+                case CRAFT, BLOCK_PLACE, STONECUT, LOOM, SMITH, ANVIL_REPAIR, SMELT, COOK, BREW, ENCHANT, TRADE -> CRAFTING;
+                case MOB_KILL, PLAYER_KILL, BOSS_KILL, TRAVEL, SAIL, BIOME_DISCOVER, CARTOGRAPHY, BRUSH -> ADVENTURE;
+                default -> GATHERING;
+            };
+        }
+        static Category parse(String value) {
+            try { return valueOf(value.toUpperCase(Locale.ROOT)); }
+            catch (IllegalArgumentException e) { throw new IllegalArgumentException("category must be gathering, crafting, or adventure"); }
+        }
+    }
     public record Job(String id, String name, String description, Material icon, BossBar.Color color, boolean naturalOnly,
-                      BigDecimal hourlyLimit, double distancePerReward, long bossBarCooldownSeconds, Progression progression, List<Rule> rules) { }
+                      BigDecimal hourlyLimit, double distancePerReward, long bossBarCooldownSeconds, Progression progression, List<Rule> rules, Category category) {
+        public Job(String id, String name, String description, Material icon, BossBar.Color color, boolean naturalOnly,
+                   BigDecimal hourlyLimit, double distancePerReward, long bossBarCooldownSeconds, Progression progression, List<Rule> rules) {
+            this(id, name, description, icon, color, naturalOnly, hourlyLimit, distancePerReward, bossBarCooldownSeconds, progression, rules, Category.automatic(rules));
+        }
+    }
 
     public Job get(String id) { return id == null ? null : byId.get(id); }
     public boolean rewards(Activity activity, Material material, EntityType entity) {
@@ -105,7 +125,7 @@ public final class JobRegistry {
                 if (!id.matches("[a-z0-9_-]{1,48}")) throw new IllegalArgumentException("Use a lowercase ID with letters, numbers, underscores or hyphens");
                 var entry = section.getConfigurationSection(id);
                 if (entry == null) throw new IllegalArgumentException("Expected a job section");
-                ConfigValues.keys(entry, Set.of("enabled", "name", "description", "icon", "color", "natural-only", "hourly-income-limit", "distance-per-reward", "boss-bar-cooldown-seconds", "progression", "rules"));
+                ConfigValues.keys(entry, Set.of("enabled", "name", "description", "category", "icon", "color", "natural-only", "hourly-income-limit", "distance-per-reward", "boss-bar-cooldown-seconds", "progression", "rules"));
                 if (!ConfigValues.bool(entry, "enabled", true)) continue;
                 var icon = Material.valueOf(entry.getString("icon", "BOOK").toUpperCase(Locale.ROOT));
                 if (!icon.isItem() || icon.isAir()) throw new IllegalArgumentException("Icon must be an item");
@@ -200,7 +220,7 @@ public final class JobRegistry {
                         ConfigValues.bool(entry, "natural-only", true), ConfigValues.money(entry, "hourly-income-limit", null),
                         ConfigValues.integer(entry, "distance-per-reward", 500, 1, 1_000_000),
                         ConfigValues.integer(entry, "boss-bar-cooldown-seconds", 0, 0, 86400),
-                        curve, List.copyOf(rules)));
+                        curve, List.copyOf(rules), Category.parse(ConfigValues.text(entry, "category", Category.automatic(rules).name(), 32))));
             } catch (Exception e) { throw new IllegalArgumentException("Invalid job '" + id + "': " + e.getMessage(), e); }
         }
         return new Loaded(new JobRegistry(List.copyOf(jobs)), yaml, upgraded);

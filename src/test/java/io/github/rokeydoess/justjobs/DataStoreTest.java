@@ -11,6 +11,24 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class DataStoreTest {
     @TempDir Path dir;
+    @Test void bonusCarrySurvivesRestartWithItsSourceAndCapExemption() throws Exception {
+        var player = new PlayerProfile(new UUID(53, 1), "BonusCarry");
+        player.pending = new BigDecimal("17.5");
+        player.paycheck.earn("hunting", new BigDecimal("5"), new BigDecimal("5"), 1, 3_600_000, true);
+        player.paycheck.earnBonus("hunting", "Wither", new BigDecimal("12.5"), 2, 3_600_000, true, true);
+        Path file = dir.resolve("jobs.db");
+        try (var store = new DataStore(file)) { store.save(List.of(player.snapshot(3)), Map.of()); }
+        try (var store = new DataStore(file)) {
+            var loaded = store.load().get(player.id);
+            assertEquals(0, loaded.pending.compareTo(new BigDecimal("17.5")));
+            assertEquals(0, loaded.paycheck.available(true).compareTo(new BigDecimal("12")));
+            assertEquals(0, loaded.paycheck.available(false).signum());
+            assertEquals(0, loaded.paycheck.earned("hunting", 3).compareTo(new BigDecimal("5")));
+            assertEquals(0, Paycheck.byJob(loaded.paycheck.snapshot().current()).get("hunting").compareTo(new BigDecimal("5.5")));
+            loaded.paycheck.advance(3_600_000, 3_600_000, true);
+            assertEquals(0, loaded.paycheck.available(false).compareTo(new BigDecimal("5.5")));
+        }
+    }
     @Test void bonusBalancesSurviveRestartWithoutUsingTheNormalCap() throws Exception {
         var player = new PlayerProfile(new UUID(30, 1), "BossHunter");
         player.pending = new BigDecimal("75");

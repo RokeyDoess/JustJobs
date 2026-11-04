@@ -306,10 +306,10 @@ public class ReleaseChecks extends JavaPlugin implements Listener {
         check(profile.xp("trading") == 16, "repeated trades use the discounted emerald price");
         check(jobs.pvpAllowed(MAIN, RETRY) && !jobs.pvpAllowed(RETRY, MAIN), "PvP pair cooldown works in both directions");
         jobs.award(player, JobRegistry.Activity.BLOCK_BREAK, Material.STONE, null, 20_000);
-        check(profile.earnings.total("mining", System.currentTimeMillis()).compareTo(new BigDecimal("25")) == 0, "money is clamped at 25 per job");
+        check(profile.earnings.total("mining", System.currentTimeMillis()).compareTo(new BigDecimal("50")) == 0, "money is clamped at 50 per job");
         double xp = profile.xp("mining");
         jobs.award(player, JobRegistry.Activity.BLOCK_BREAK, Material.STONE, null, 1);
-        check(profile.xp("mining") == xp + 1 && profile.earnings.total("mining", System.currentTimeMillis()).compareTo(new BigDecimal("25")) == 0,
+        check(profile.xp("mining") == xp + 1 && profile.earnings.total("mining", System.currentTimeMillis()).compareTo(new BigDecimal("50")) == 0,
                 "XP continues after the money cap without banking excess money");
     }
     void newJobChecks() {
@@ -424,7 +424,7 @@ public class ReleaseChecks extends JavaPlugin implements Listener {
         check(jobs.settings() == original && replacement.stream().noneMatch(BukkitTask::isCancelled), "invalid reload retains settings and running schedules");
         yaml.set("feedback.boss-bar", true); yaml.set("economy.hourly-income-limit-per-job", null); yaml.save(file);
         Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "jobs reload");
-        check(YamlConfiguration.loadConfiguration(file).getString("economy.hourly-income-limit-per-job").equals("25"), "missing shared settings are filled without replacing owner values");
+        check(YamlConfiguration.loadConfiguration(file).getString("economy.hourly-income-limit-per-job").equals("50"), "missing shared settings are filled without replacing owner values");
         var temp = new java.io.File(getDataFolder(), "invalid-job.yml"); temp.getParentFile().mkdirs();
         var jobFile = YamlConfiguration.loadConfiguration(new java.io.File(jobs.getDataFolder(), "jobs.yml"));
         jobFile.set("jobs.digging.rules", List.of(Map.of("activity", "block-break", "materials", List.of("DIRT"), "entities", List.of("*"), "xp", 1)));
@@ -455,6 +455,11 @@ public class ReleaseChecks extends JavaPlugin implements Listener {
             return slots.entrySet().stream().filter(entry -> entry.getValue().equals(id)).findFirst().orElseThrow().getKey();
         } catch (Exception failure) { throw new AssertionError(failure); }
     }
+    List<String> allLore() {
+        return java.util.Arrays.stream(current.getContents()).filter(java.util.Objects::nonNull)
+                .filter(item -> item.getItemMeta().hasLore()).flatMap(item -> item.getItemMeta().lore().stream())
+                .map(PaydayChecks::plain).toList();
+    }
     void presentationChecks() throws Exception {
         var settingsFile = new java.io.File(jobs.getDataFolder(), "config.yml");
         var jobsFile = new java.io.File(jobs.getDataFolder(), "jobs.yml");
@@ -470,11 +475,13 @@ public class ReleaseChecks extends JavaPlugin implements Listener {
             configuredJobs.set("jobs.engineering.rules", rules); configuredJobs.save(jobsFile);
             Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "jobs reload");
             var menus = new JobsMenu(jobs); menus.open(player, false, 0, null);
-            check(lore(jobSlot("engineering")).stream().anyMatch(line -> line.contains("¤0.02 / custom wiring")), "custom currency symbol and rule description apply on reload");
-            check(lore(jobSlot("engineering")).stream().anyMatch(line -> line.contains("¤0.15 / piston")), "a custom rule without a description names its selected material");
-            check(lore(19).stream().anyMatch(line -> line.contains("¤0.0085 / soil or sand block")), "small reward rates keep their exact decimal value in the menu");
             check(lore(4).stream().anyMatch(line -> line.startsWith("Unpaid earnings: ") && line.contains("¤"))
-                    && lore(20).stream().anyMatch(line -> line.startsWith("Earned this hour: ¤")), "balances and hourly limits use the configured currency symbol");
+                    && lore(jobSlot("mining")).stream().anyMatch(line -> line.startsWith("Earned this hour: ¤")), "balances and hourly limits use the configured currency symbol");
+            menus.open(player, false, 0, "engineering");
+            check(allLore().stream().anyMatch(line -> line.contains("¤0.02 / custom wiring")), "custom currency symbol and rule description apply on reload");
+            check(allLore().stream().anyMatch(line -> line.contains("¤0.15 / piston")), "a custom rule without a description names its selected material");
+            menus.open(player, false, 0, "digging");
+            check(allLore().stream().anyMatch(line -> line.contains("¤0.0085 / soil or sand block")), "small reward rates keep their exact decimal value in the menu");
             check(jobs.currency(new BigDecimal("0.005")).equals("<¤0.01"), "sub-cent saved balances display their threshold with the configured symbol");
             var active = jobs.settings(); settings.set("economy.currency-symbol", 12); settings.save(settingsFile);
             Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "jobs reload");
@@ -497,20 +504,28 @@ public class ReleaseChecks extends JavaPlugin implements Listener {
                 "the jobs page has no leftover feedback toggles");
         check(((JobsMenu.Page) current.getHolder()).getInventory() == current && current.getItem(4).getType() == Material.BOOK && current.getItem(44).getType() == Material.OAK_DOOR,
                 "info is top center and close is bottom right");
-        check(java.util.stream.IntStream.of(19, 20, 21, 22, 23, 24, 25, 11, 12, 13, 14, 15, 29, 30, 31, 32, 33).allMatch(s -> current.getItem(s) != null && current.getItem(s).getItemMeta().lore().size() >= 6)
-                        && current.getItem(10) == null && current.getItem(0).getType() == Material.GRAY_STAINED_GLASS_PANE,
-                "jobs fill the middle row first with balanced overflow and a gray border");
-        check(current.getItem(19).getData(io.papermc.paper.datacomponent.DataComponentTypes.TOOLTIP_DISPLAY).hiddenComponents()
+        check(jobSlot("digging") / 9 == 1 && jobSlot("farming") / 9 == 1 && jobSlot("archaeology") / 9 == 3
+                        && jobSlot("engineering") / 9 == 2 && jobSlot("trading") / 9 == 2 && jobSlot("cooking") / 9 == 2
+                        && jobSlot("hunting") / 9 == 3 && jobSlot("exploring") / 9 == 3 && jobSlot("sailing") / 9 == 3,
+                "jobs are grouped into gathering, crafting and trade, and adventure rows");
+        check(current.getItem(9) == null && current.getItem(18) == null
+                        && current.getItem(27) == null && lore(jobSlot("mining")).size() == 4
+                        && current.getItem(0).getType() == Material.GRAY_STAINED_GLASS_PANE,
+                "compact entries leave the row edges open and preserve the gray top and bottom borders");
+        check(current.getItem(jobSlot("mining")).getData(io.papermc.paper.datacomponent.DataComponentTypes.TOOLTIP_DISPLAY).hiddenComponents()
                 .contains(io.papermc.paper.datacomponent.DataComponentTypes.ATTRIBUTE_MODIFIERS), "menu tools explicitly hide native attack attributes");
-        check(lore(20).stream().anyMatch(line -> line.contains("$0.006 / stone block"))
-                        && lore(20).stream().anyMatch(line -> line.contains("$0.03 / common ore (coal, copper, Nether ores)"))
-                        && lore(20).stream().anyMatch(line -> line.contains("$0.08 / iron, gold, redstone or lapis ore"))
-                        && lore(20).stream().anyMatch(line -> line.contains("$0.35 / rare ore (diamond, emerald, ancient debris)")),
+        menus.open(player, false, 0, "mining");
+        check(allLore().stream().anyMatch(line -> line.contains("$0.006 / stone block"))
+                        && allLore().stream().anyMatch(line -> line.contains("$0.03 / common ore (coal, copper, Nether ores)"))
+                        && allLore().stream().anyMatch(line -> line.contains("$0.08 / iron, gold, redstone or lapis ore"))
+                        && allLore().stream().anyMatch(line -> line.contains("$0.35 / rare ore (diamond, emerald, ancient debris)")),
                 "Mining's four rates explain which block groups qualify");
-        check(lore(jobSlot("engineering")).stream().anyMatch(line -> line.contains("/ redstone torch, repeater, tripwire hook or rail crafted"))
-                        && lore(jobSlot("engineering")).stream().anyMatch(line -> line.contains("/ powered, detector or activator rail crafted"))
-                        && lore(jobSlot("engineering")).stream().anyMatch(line -> line.contains("/ component crafted (piston, hopper, observer, etc.)")),
+        menus.open(player, false, 0, "engineering");
+        check(allLore().stream().anyMatch(line -> line.contains("/ redstone torch, repeater, tripwire hook or rail crafted"))
+                        && allLore().stream().anyMatch(line -> line.contains("/ powered, detector or activator rail crafted"))
+                        && allLore().stream().anyMatch(line -> line.contains("/ component crafted (piston, hopper, observer, etc.)")),
                 "Engineering's three rates describe their component groups");
+        menus.open(player, false, 0, null);
         check(profile.notifications, "level-up chat starts enabled by default");
         jobs.settings().set("feedback.level-up-chat-default", false);
         check(!jobs.profile(player(UUID.fromString("22245436-4f12-42ca-82cf-cb56909ee37a"), "QuietChecks")).notifications,
@@ -738,9 +753,9 @@ public class ReleaseChecks extends JavaPlugin implements Listener {
         check(loadPlayers.stream().allMatch(p -> Math.abs(jobs.profile(p).xp("exploring") - 10 - paidDistance * .01) < 1e-6
                         && Math.abs(jobs.profile(p).travel.distance("exploring") - (traveled - paidDistance)) < 1e-6),
                 "movement events give one discovery bonus and buffer distance without repeatedly applying travel XP");
-        var expected = new BigDecimal("0.006").multiply(BigDecimal.valueOf(loadTicks)).min(new BigDecimal("25"))
-                .add(new BigDecimal("0.05").multiply(BigDecimal.valueOf(kills)).min(new BigDecimal("25")))
-                .add(new BigDecimal("0.00075").multiply(BigDecimal.valueOf(paidDistance)).add(new BigDecimal("0.25")).min(new BigDecimal("25")));
+        var expected = new BigDecimal("0.006").multiply(BigDecimal.valueOf(loadTicks)).min(new BigDecimal("50"))
+                .add(new BigDecimal("0.05").multiply(BigDecimal.valueOf(kills)).min(new BigDecimal("50")))
+                .add(new BigDecimal("0.00075").multiply(BigDecimal.valueOf(paidDistance)).add(new BigDecimal("0.25")).min(new BigDecimal("50")));
         check(loadPlayers.stream().allMatch(p -> balances.getOrDefault(p.getUniqueId(), BigDecimal.ZERO).add(jobs.profile(p).pending).compareTo(expected) == 0),
                 "all 100 simulated players receive exact payments under load");
         check(worker.submit(store::load).get(10, TimeUnit.SECONDS).get(new UUID(1, 0)).name.equals("Saved0"), "idle saved players are not rewritten during active-player saves");
@@ -789,7 +804,7 @@ public class ReleaseChecks extends JavaPlugin implements Listener {
             menus.open(player, true, 0, null);
             later(20, () -> {
                 menus.open(player, true, 0, null);
-                var lore = current.getItem(19).getItemMeta().lore();
+                var lore = current.getItem(jobSlot("digging")).getItemMeta().lore();
                 check(lore.stream().anyMatch(line -> line instanceof net.kyori.adventure.text.TextComponent text && text.content().startsWith("#1 ")),
                         "leaderboard selector shows top players in job lore");
                 check(lore.stream().noneMatch(line -> line.toString().contains("Earned this hour")), "leaderboard preview omits personal job statistics");
@@ -798,7 +813,7 @@ public class ReleaseChecks extends JavaPlugin implements Listener {
                                 && current.getItem(slot).getItemMeta().displayName().toString().matches(".*(Boss bar:|Level-up chat:|Payday chat:).*")),
                         "the leaderboards page has one settings entry and no leftover toggles");
                 jobs.settings().set("feedback.leaderboard-preview-size", 3); menus.open(player, true, 0, null);
-                check(current.getItem(19).getItemMeta().lore().stream().filter(line -> line instanceof net.kyori.adventure.text.TextComponent text
+                check(current.getItem(jobSlot("digging")).getItemMeta().lore().stream().filter(line -> line instanceof net.kyori.adventure.text.TextComponent text
                         && text.content().startsWith("#")).count() == 3, "leaderboard preview size is configurable");
                 jobs.settings().set("feedback.leaderboard-preview-size", 5);
                 menus.click(new InventoryClickEvent(view(), InventoryType.SlotType.CONTAINER, 36, ClickType.LEFT, InventoryAction.PICKUP_ALL));
@@ -864,10 +879,10 @@ public class ReleaseChecks extends JavaPlugin implements Listener {
         check(!history.eligible(block(0)) && history.playerPlaced(block(15)), "natural and placed block tracking survive a server restart");
         check(!history.placementRewarded(block(3)) && !history.placementRewarded(block(4)) && !history.placementRewarded(block(6).getRelative(org.bukkit.block.BlockFace.UP)),
                 "the new defaults leave no placement claims after a restart");
-        check(profile.earnings.total("mining", System.currentTimeMillis()).compareTo(new BigDecimal("25")) == 0, "hourly cap survives a server restart");
+        check(profile.earnings.total("mining", System.currentTimeMillis()).compareTo(new BigDecimal("50")) == 0, "hourly cap survives a server restart");
         double xp = profile.xp("mining");
         jobs.award(player, JobRegistry.Activity.BLOCK_BREAK, Material.STONE, null, 1);
-        check(profile.xp("mining") == xp + 1 && profile.earnings.total("mining", System.currentTimeMillis()).compareTo(new BigDecimal("25")) == 0, "relogging or restarting cannot reset the money cap");
+        check(profile.xp("mining") == xp + 1 && profile.earnings.total("mining", System.currentTimeMillis()).compareTo(new BigDecimal("50")) == 0, "relogging or restarting cannot reset the money cap");
         later(45, () -> {
             check(crash.pending.signum() == 0 && balances.get(CRASH).compareTo(new BigDecimal("2.37")) == 0, "recovered earnings pay automatically, including fractional mode");
             check(worker.submit(store::unresolved).get(10, TimeUnit.SECONDS).isEmpty(), "restart recovery leaves no payments waiting for an admin");

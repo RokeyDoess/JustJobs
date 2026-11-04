@@ -23,7 +23,7 @@ public final class WorkstationChecks extends CraftingChecks {
         world = Bukkit.getWorlds().getFirst();
         worker = (ExecutorService) field(jobs, "worker");
         check(jobs.registry().jobs().size() == 17, "all seventeen default jobs load");
-        check(jobs.settings().getString("economy.hourly-income-limit-per-job").equals("25"), "default money cap is twenty-five per job");
+        check(jobs.settings().getString("economy.hourly-income-limit-per-job").equals("50"), "default money cap is fifty per job");
         if (Files.exists(getDataFolder().toPath().resolve("restart"))) {
             check(jobs.players().values().stream().anyMatch(p -> p.xp("building") == 32), "completed bulk stonecutting survives restart");
             finish(2); return;

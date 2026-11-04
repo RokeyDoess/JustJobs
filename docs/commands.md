@@ -4,7 +4,7 @@ All jobs track automatically. Players don't need a command to start earning.
 
 | Command | What it does |
 | --- | --- |
-| `/jobs` | Open your jobs, levels, progress, and reward rates |
+| `/jobs` | Open your jobs, levels, and progress; click a job for activities and rewards |
 | `/jobs leaderboard` | Open the job leaderboards |
 | `/jobs bossbar` | Toggle your progress bar |
 | `/jobs notifications` | Toggle your level-up chat messages |
@@ -20,7 +20,9 @@ Bonuses pay immediately. Hover over “Bonus!” in their deposit message to see
 
 Detailed leaderboards rank players by total job XP, reading left to right from the top row down.
 
-Jobs and leaderboards hold 27 entries per page, with glass along the top and bottom. Job selection keeps its center-first arrangement; the side slots provide overflow space when a page has more than 21 jobs.
+Jobs are grouped into Gathering, Crafting & Trade, and Adventure rows. Hover over a job for its level, progress, and earnings. Click it for detailed progress and individual reward entries, with a button for that job's leaderboard. Back returns to the jobs page you came from.
+
+The leaderboard selector uses the same groups. Each row holds nine jobs; larger groups get more pages. Detailed leaderboards and job reward lists hold 27 entries per page. The top and bottom bars keep their usual navigation, Settings, and Close buttons.
 
 Job milestones are announced in global chat every 50 levels by default. The server owner can change or disable them in `config.yml`; personal chat toggles don't affect these announcements.
 

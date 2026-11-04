@@ -6,6 +6,22 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 class MenuLayoutTest {
+    @Test void groupRowsUseAllNineSlotsInOrderAndStayCentered() {
+        var used = new HashSet<Integer>();
+        for (var category : JobRegistry.Category.values()) {
+            int row = category.ordinal() + 1;
+            for (int count = 0; count <= 9; count++) {
+                var slots = MenuLayout.group(category, count);
+                assertEquals(count, new HashSet<>(slots).size());
+                assertTrue(slots.stream().allMatch(slot -> slot / 9 == row));
+                assertEquals(slots.stream().sorted().toList(), slots);
+                for (int slot : slots) assertTrue(slots.contains(row * 18 + 8 - slot));
+            }
+            for (int slot : MenuLayout.group(category, 9)) assertTrue(used.add(slot));
+        }
+        assertEquals(27, used.size());
+        assertThrows(IllegalArgumentException.class, () -> MenuLayout.group(JobRegistry.Category.GATHERING, 10));
+    }
     @Test void nineJobsFillTheMiddleThenBalanceAboveAndBelow() {
         assertEquals(List.of(19, 20, 21, 22, 23, 24, 25, 13, 31), MenuLayout.entries(9));
         assertEquals(List.of(39, 40, 41), MenuLayout.controls(3));

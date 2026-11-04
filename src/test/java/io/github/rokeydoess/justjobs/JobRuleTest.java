@@ -11,6 +11,16 @@ import net.kyori.adventure.bossbar.BossBar;
 import static org.junit.jupiter.api.Assertions.*;
 
 class JobRuleTest {
+    @Test void categoriesUseTheFirstActivityUnlessAnExplicitChoiceIsMade() {
+        for (var activity : List.of(JobRegistry.Activity.BLOCK_BREAK, JobRegistry.Activity.FISH))
+            assertEquals(JobRegistry.Category.GATHERING, JobRegistry.Category.automatic(List.of(new JobRegistry.Rule(activity, Set.of(), Set.of(), true, 1, BigDecimal.ONE, "", Set.of(), Set.of()))));
+        for (var activity : List.of(JobRegistry.Activity.CRAFT, JobRegistry.Activity.TRADE, JobRegistry.Activity.ENCHANT, JobRegistry.Activity.COOK))
+            assertEquals(JobRegistry.Category.CRAFTING, JobRegistry.Category.automatic(List.of(new JobRegistry.Rule(activity, Set.of(), Set.of(), true, 1, BigDecimal.ONE, "", Set.of(), Set.of()))));
+        for (var activity : List.of(JobRegistry.Activity.MOB_KILL, JobRegistry.Activity.TRAVEL, JobRegistry.Activity.SAIL, JobRegistry.Activity.BRUSH))
+            assertEquals(JobRegistry.Category.ADVENTURE, JobRegistry.Category.automatic(List.of(new JobRegistry.Rule(activity, Set.of(), Set.of(), true, 1, BigDecimal.ONE, "", Set.of(), Set.of()))));
+        assertEquals(JobRegistry.Category.CRAFTING, JobRegistry.Category.parse("crafting"));
+        assertThrows(IllegalArgumentException.class, () -> JobRegistry.Category.parse("invalid"));
+    }
     @Test void activityIndexPreservesOverlappingRulesJobsAndMatchingOrder() {
         var dirt = new JobRegistry.Rule(JobRegistry.Activity.BLOCK_BREAK, Set.of(Material.DIRT), Set.of(), false, 1, BigDecimal.ONE, "", Set.of(), Set.of());
         var sand = new JobRegistry.Rule(JobRegistry.Activity.BLOCK_BREAK, Set.of(Material.SAND), Set.of(), false, 2, BigDecimal.TEN, "", Set.of(), Set.of(), true);

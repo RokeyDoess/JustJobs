@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.2.0 (2026-11-04)
+
+- Centered the jobs and leaderboard selectors in Gathering, Crafting & Trade, and Adventure rows. Archaeology sits in Adventure. Compact job entries show level, a configurable progress bar, and earnings. Click a job for its activities, rewards, and detailed progress. Larger groups and reward lists use additional pages.
+- Added an optional per-job `category` setting. Existing and custom jobs pick a group from their first activity unless one is set.
+- Raised the shared default earning cap from 25 to 50 per job per paycheck. The previous shared default upgrades automatically. Custom caps are preserved.
+- Added `economy.payout-multiplier`, defaulting to `1`, to scale all new money rewards, bonuses, and shared or custom job caps. Menus show the adjusted rates and limits. XP and money already earned stay unchanged; `/jobs reload` applies changes.
+- Bonuses now use their own deposits. In whole-number mode, bonus fractions go into the source job's next paycheck without using its cap. Old paycheck remainders no longer join a bonus deposit or trigger an extra payday message. Fractional payout mode still pays the full bonus immediately.
+- Reduced default boss bonuses to 25 coins per Dragon contributor and 10 per Wither contributor. Recognized defaults update automatically; customized boss rules stay unchanged.
+
 ## 1.1.3 (2026-11-02)
 
 - Sailing sampling starts when players board boats and stops when the last rider leaves. Empty payment queues and inactive feedback skip unnecessary allocation and cleanup scans.

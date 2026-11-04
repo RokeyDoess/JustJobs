@@ -9,6 +9,7 @@ import java.util.TreeMap;
 public final class Paycheck {
     public static final String PREVIOUS = "@previous";
     private static final String BONUS = "@bonus:";
+    private static final String CARRY = "@carry:";
     private final Map<String, BigDecimal> current = new HashMap<>(), due = new HashMap<>();
     private long next;
     public record Snapshot(long next, Map<String, BigDecimal> current, Map<String, BigDecimal> due) { }
@@ -46,17 +47,49 @@ public final class Paycheck {
         return next > 0 && now >= next ? BigDecimal.ZERO : current.getOrDefault(job, BigDecimal.ZERO);
     }
     public BigDecimal available() { return total(due); }
+    public BigDecimal available(boolean bonus) {
+        BigDecimal amount = BigDecimal.ZERO;
+        for (var entry : due.entrySet()) if (isBonus(entry.getKey()) == bonus) amount = amount.add(entry.getValue());
+        return amount;
+    }
     public BigDecimal earnBonus(String job, BigDecimal amount, long now, long interval, boolean enabled) {
         return earnBonus(job, job, amount, now, interval, enabled);
     }
     public BigDecimal earnBonus(String job, String source, BigDecimal amount, long now, long interval, boolean enabled) {
+        return earnBonus(job, source, amount, now, interval, enabled, false);
+    }
+    public BigDecimal earnBonus(String job, String source, BigDecimal amount, long now, long interval, boolean enabled, boolean whole) {
         if (amount.signum() < 0) throw new IllegalArgumentException("Negative bonus amount");
         advance(now, interval, enabled);
-        if (amount.signum() > 0) due.merge(BONUS + job + ":" + source, amount, BigDecimal::add);
+        BigDecimal immediate = whole ? amount.setScale(0, java.math.RoundingMode.DOWN) : amount;
+        if (immediate.signum() > 0) due.merge(BONUS + job + ":" + source, immediate, BigDecimal::add);
+        carry(job, amount.subtract(immediate), enabled);
         return amount;
+    }
+    /** Older balances and partial provider credits may leave fractions in the bonus bucket. */
+    public boolean deferBonusRemainders(boolean payday) {
+        Map<String, BigDecimal> remainders = null;
+        for (var iterator = due.entrySet().iterator(); iterator.hasNext();) {
+            var entry = iterator.next();
+            if (!isBonus(entry.getKey())) continue;
+            BigDecimal whole = entry.getValue().setScale(0, java.math.RoundingMode.DOWN);
+            BigDecimal fraction = entry.getValue().subtract(whole);
+            if (fraction.signum() == 0) continue;
+            if (remainders == null) remainders = new HashMap<>();
+            remainders.merge(jobId(entry.getKey()), fraction, BigDecimal::add);
+            if (whole.signum() == 0) iterator.remove(); else entry.setValue(whole);
+        }
+        if (remainders == null) return false;
+        remainders.forEach((job, amount) -> carry(job, amount, payday));
+        return true;
+    }
+    private void carry(String job, BigDecimal amount, boolean payday) {
+        // A separate key preserves the source job without consuming its normal allowance.
+        if (amount.signum() > 0) (payday ? current : due).merge(CARRY + job, amount, BigDecimal::add);
     }
     public static boolean isBonus(String key) { return key.startsWith(BONUS); }
     private static String jobId(String key) {
+        if (key.startsWith(CARRY)) return key.substring(CARRY.length());
         if (!isBonus(key)) return key;
         String value = key.substring(BONUS.length()); int separator = value.indexOf(':');
         return separator < 0 ? value : value.substring(0, separator);
@@ -77,6 +110,16 @@ public final class Paycheck {
         return Map.copyOf(result);
     }
     public Map<String, BigDecimal> take(BigDecimal amount) { return take(due, amount); }
+    public Map<String, BigDecimal> take(BigDecimal amount, boolean bonus) {
+        var eligible = new HashMap<String, BigDecimal>();
+        due.forEach((job, value) -> { if (isBonus(job) == bonus) eligible.put(job, value); });
+        var taken = take(eligible, amount);
+        taken.forEach((job, value) -> {
+            BigDecimal rest = due.get(job).subtract(value);
+            if (rest.signum() == 0) due.remove(job); else due.put(job, rest);
+        });
+        return taken;
+    }
     public void refund(Map<String, BigDecimal> amounts) { add(due, amounts); }
     public Snapshot snapshot() { return new Snapshot(next, Map.copyOf(current), Map.copyOf(due)); }
     public void restore(long next, String job, BigDecimal amount, boolean released) {

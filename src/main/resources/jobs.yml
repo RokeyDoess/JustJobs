@@ -1,5 +1,6 @@
 # Add another entry under jobs to create a job; no code changes are needed.
 # Keep its ID stable: player progress is stored against that ID.
+# Optional category: gathering, crafting, or adventure. Otherwise the first activity picks the menu row.
 # Activities: block-break, craft, block-place, crop-harvest, breed, fish, mob-kill,
 # player-kill, trade, travel, sail, enchant, shear, beehive-harvest, tame, stonecut,
 # loom, brush, smith, anvil-repair, cure-villager, cartography, biome-discover, smelt, cook, brew, boss-kill.
@@ -27,11 +28,11 @@
 # Smith operations: upgrade, trim. Cartography operations: expand, lock, copy.
 # Biome discoveries use biomes: ['*'] or namespaced biome names; once per player across worlds.
 # Anvil repairs count the fraction of full durability restored, not clicks or XP levels.
-# Travel pays a smaller bonus. Each job's default cap is 25 per period.
+# Travel pays a smaller bonus. The shared cap is set in config.yml.
 # Processing pays the direct ingredient contributor, or the block owner for unassigned inputs.
 # boss-kill pays every eligible player who damaged the boss; each gets the full rule reward.
 # Rules may set bonus: true to leave the normal job allowance untouched.
-config-version: 15
+config-version: 17
 jobs:
   digging:
     name: Digging
@@ -119,13 +120,13 @@ jobs:
         description: Ender Dragon defeated (each contributor)
         entities: [ENDER_DRAGON]
         xp: 200
-        money: '50'
+        money: '25'
         bonus: true
       - activity: boss-kill
         description: Wither defeated (each contributor)
         entities: [WITHER]
         xp: 50
-        money: '12.5'
+        money: '10'
         bonus: true
   dueling:
     name: Dueling

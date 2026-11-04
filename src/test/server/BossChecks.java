@@ -69,16 +69,16 @@ public final class BossChecks extends CraftingChecks {
         die(dragon, true); expect(first, 0, "0", "a cancelled boss death pays nobody");
         check(count(dragon) == 2, "cancelled death retains lifetime participation");
         die(dragon, false);
-        expect(first, 200, "50", "the first dragon contributor receives the full XP and money bonus");
-        expect(second, 200, "50", "a projectile contributor receives the same full dragon bonus");
+        expect(first, 200, "25", "the first dragon contributor receives the full XP and money bonus");
+        expect(second, 200, "25", "a projectile contributor receives the same full dragon bonus");
         expect(spectator, 0, "0", "being near a boss without damaging it earns nothing");
-        die(dragon, false); expect(first, 200, "50", "repeated death notifications cannot repeat a boss bonus");
+        die(dragon, false); expect(first, 200, "25", "repeated death notifications cannot repeat a boss bonus");
         check(jobs.capEarnings(jobs.profile(first.player()), "hunting", System.currentTimeMillis()).signum() == 0,
                 "a dragon bonus leaves the ordinary hunting allowance unused");
-        check(jobs.profile(first.player()).paycheck.available().compareTo(new BigDecimal("50")) == 0, "boss bonuses become payable immediately");
+        check(jobs.profile(first.player()).paycheck.available().compareTo(new BigDecimal("25")) == 0, "boss bonuses become payable immediately");
         var boss = wither(); hit(boss, first.player(), 1, false); die(boss, false);
-        expect(first, 250, "62.5", "a player-built Wither pays one quarter of the dragon's money and XP");
-        check(Paycheck.byJob(jobs.profile(first.player()).paycheck.snapshot().due()).get("hunting").compareTo(new BigDecimal("62.5")) == 0,
+        expect(first, 250, "35", "a player-built Wither pays ten coins and fifty XP");
+        check(Paycheck.byJob(jobs.profile(first.player()).paycheck.snapshot().due()).get("hunting").compareTo(new BigDecimal("35")) == 0,
                 "separate boss sources still attribute their total to the Hunting job");
         dragon.remove(); boss.remove(); arrow.remove();
     }
@@ -98,17 +98,17 @@ public final class BossChecks extends CraftingChecks {
         expect(accepted, 0, "0", "command-spawned bosses follow the artificial-spawn restriction"); command.remove();
         jobs.settings().set("rules.reward-spawner-mobs", true);
         var allowed = spawn(Wither.class, SpawnReason.CUSTOM); hit(allowed, accepted.player(), 1, false); die(allowed, false);
-        expect(accepted, 50, "12.5", "allowing artificial spawns also permits their configured boss reward");
+        expect(accepted, 50, "10", "allowing artificial spawns also permits their configured boss reward");
         jobs.settings().set("rules.reward-spawner-mobs", false); allowed.remove();
     }
     void capsAndConfiguration() throws Exception {
-        var actor = table(); jobs.award(actor.player(), JobRegistry.Activity.MOB_KILL, null, EntityType.ZOMBIE, 500);
+        var actor = table(); jobs.award(actor.player(), JobRegistry.Activity.MOB_KILL, null, EntityType.ZOMBIE, 1000);
         var boss = wither(); hit(boss, actor.player(), 1, false); die(boss, false);
-        expect(actor, 2550, "37.5", "boss bonuses pay in full even after the normal payday cap is reached"); boss.remove();
+        expect(actor, 5050, "60", "boss bonuses pay in full even after the normal payday cap is reached"); boss.remove();
         jobs.settings().set("economy.payday-enabled", false);
         var immediate = table(); var first = wither(); hit(first, immediate.player(), 1, false); die(first, false);
-        jobs.award(immediate.player(), JobRegistry.Activity.MOB_KILL, null, EntityType.ZOMBIE, 500);
-        expect(immediate, 2550, "37.5", "a bonus leaves the full rolling-hour allowance available in immediate mode"); first.remove();
+        jobs.award(immediate.player(), JobRegistry.Activity.MOB_KILL, null, EntityType.ZOMBIE, 1000);
+        expect(immediate, 5050, "60", "a bonus leaves the full rolling-hour allowance available in immediate mode"); first.remove();
         jobs.settings().set("economy.payday-enabled", true);
         var file = jobs.getDataFolder().toPath().resolve("jobs.yml"); String original = Files.readString(file);
         try {
@@ -120,9 +120,9 @@ public final class BossChecks extends CraftingChecks {
                 rules.add(rule);
             }
             config.set("jobs.hunting.rules", rules); config.save(file.toFile()); reload();
-            var limited = table(); jobs.award(limited.player(), JobRegistry.Activity.MOB_KILL, null, EntityType.ZOMBIE, 500);
+            var limited = table(); jobs.award(limited.player(), JobRegistry.Activity.MOB_KILL, null, EntityType.ZOMBIE, 1000);
             var capped = wither(); hit(capped, limited.player(), 1, false); die(capped, false);
-            expect(limited, 2509, "25", "turning bonus off applies the cap while custom boss XP still pays"); capped.remove();
+            expect(limited, 5009, "50", "turning bonus off applies the cap while custom boss XP still pays"); capped.remove();
             var custom = table(); var customBoss = wither(); hit(customBoss, custom.player(), 1, false); die(customBoss, false);
             expect(custom, 9, "3.25", "reloaded boss rules apply custom money and XP"); customBoss.remove();
             rules.getFirst().put("bonus", true); config.set("jobs.hunting.rules", rules); config.save(file.toFile()); reload();
@@ -137,7 +137,7 @@ public final class BossChecks extends CraftingChecks {
         boss.damage(1, DamageSource.builder(DamageType.PLAYER_ATTACK).withCausingEntity(actor.player()).withDirectEntity(actor.player()).build());
         check(count(boss) == 1 && boss.getHealth() < boss.getMaxHealth(), "real server damage records the attacking player");
         boss.kill(DamageSource.builder(DamageType.GENERIC_KILL).build());
-        expect(actor, 50, "12.5", "an environmental finishing blow still pays the earlier contributor");
+        expect(actor, 50, "10", "an environmental finishing blow still pays the earlier contributor");
     }
     void saveBoss(java.nio.file.Path marker) throws Exception {
         var actor = table(); var boss = wither(); hit(boss, actor.player(), 1, false);
@@ -151,10 +151,10 @@ public final class BossChecks extends CraftingChecks {
         var actor = jobs.players().get(UUID.fromString(saved.getString("player")));
         check(boss != null && count(boss) == 1 && actor != null, "boss participation and offline profiles survive restart");
         check(boss.getEntitySpawnReason() == SpawnReason.BUILD_WITHER, "the legitimate Wither spawn reason survives restart");
-        die(boss, false); check(actor.xp("hunting") == 50 && actor.pending.compareTo(new BigDecimal("12.5")) == 0,
+        die(boss, false); check(actor.xp("hunting") == 50 && actor.pending.compareTo(new BigDecimal("10")) == 0,
                 "an offline lifetime contributor receives the full bonus after restart");
-        die(boss, false); check(actor.pending.compareTo(new BigDecimal("12.5")) == 0, "a restarted boss cannot pay the same contributor twice");
-        check(actor.paycheck.available().compareTo(new BigDecimal("12.5")) == 0, "the restarted bonus is payable without waiting for payday");
+        die(boss, false); check(actor.pending.compareTo(new BigDecimal("10")) == 0, "a restarted boss cannot pay the same contributor twice");
+        check(actor.paycheck.available().compareTo(new BigDecimal("10")) == 0, "the restarted bonus is payable without waiting for payday");
         finishBoss(2);
     }
     void reload() { jobs.onCommand(Bukkit.getConsoleSender(), jobs.getCommand("jobs"), "jobs", new String[]{"reload"}); }

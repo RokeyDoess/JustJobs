@@ -9,19 +9,19 @@ A jobs plugin that just does jobs.
 
 Dig a tunnel, chop some trees, catch a fish. JustJobs rewards everyday survival play with job XP, levels, and money. Every job tracks automatically, so players can get on with playing instead of choosing careers or managing job slots.
 
-`/jobs` shows progress, rewards, leaderboards, and the next paycheck in a simple inventory menu. A boss bar keeps progress visible while playing. Settings lets players choose their boss bar, chat and clock preferences. Every 50 job levels, the server gets a milestone announcement.
+`/jobs` groups jobs into Gathering, Crafting & Trade, and Adventure. Check your progress at a glance, then click a job for its activities and rewards. Leaderboards and your next paycheck are close at hand. A boss bar keeps progress visible while playing. Settings lets players choose their boss bar, chat and clock preferences. Every 50 job levels, the server gets a milestone announcement.
 
 ## What you get
 
 Seventeen jobs, from Mining and Farming to Cooking, Brewing, Archaeology, and Smithing. Make gear, harvest honey, cook a meal, or find a new biome—there's more than one way to earn.
 
-Boss fights give everyone who helped an immediate bonus. Each player who damaged the Dragon or Wither gets the full reward.
+Boss fights give everyone who helped a separate bonus deposit. Each player who damaged the Dragon or Wither gets the full reward. With whole coins enabled, bonus fractions go toward the next paycheck.
 
 Load a furnace yourself and the earnings are yours. Hopper-fed ingredients pay the workstation owner, so running a public smelter or brewery can earn something too.
 
 Paychecks arrive automatically every real-time hour, including for offline players. Hover over “Payday!” in chat to see what each job paid. Whole-number payouts carry small remainders forward, so no earnings go to waste. Immediate payouts are available too.
 
-All jobs live in one `jobs.yml`. Change rewards, adjust leveling, disable jobs, or add your own. Each job has a configurable money cap that resets at payday; XP keeps counting after it.
+All jobs live in one `jobs.yml`. Change rewards, adjust leveling, disable jobs, or add your own. Each job has a configurable money cap that resets at payday; XP keeps counting after it. A single payout multiplier scales all rewards and money caps together.
 
 ## Install
 

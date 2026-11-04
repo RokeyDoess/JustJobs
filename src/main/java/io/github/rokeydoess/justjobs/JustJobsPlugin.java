@@ -30,6 +30,7 @@ import java.util.logging.Level;
 
 public final class JustJobsPlugin extends JavaPlugin {
     private YamlConfiguration settings;
+    private BigDecimal payoutMultiplier = BigDecimal.ONE;
     private TimeDisplay timeDisplay = new TimeDisplay(12);
     private JobRegistry registry;
     private DataStore store;
@@ -59,6 +60,7 @@ public final class JustJobsPlugin extends JavaPlugin {
     private long paydayBoundary;
     private Diagnostics diagnostics;
     private final Map<UUID, BigDecimal> reservedAmounts = new HashMap<>();
+    private final Set<UUID> reservedBonuses = new HashSet<>();
     private record Display(BossBar bar, String job, long shown, long expires) { }
 
     @Override public void onEnable() {
@@ -122,12 +124,19 @@ public final class JustJobsPlugin extends JavaPlugin {
             ConfigValues.bool(next, key, defaults.getBoolean(key));
         ConfigValues.integer(next, "economy.payday-interval-minutes", 60, 1, 1440);
         ConfigValues.integer(next, "development.summary-interval-seconds", 300, 10, 3600);
-        ConfigValues.money(next, "economy.hourly-income-limit-per-job", new BigDecimal("25"));
+        ConfigValues.money(next, "economy.hourly-income-limit-per-job", new BigDecimal("50"));
+        var nextPayoutMultiplier = ConfigValues.money(next, "economy.payout-multiplier", BigDecimal.ONE);
         ConfigValues.text(next, "economy.currency-symbol", "$", 16);
         ConfigValues.integer(next, "feedback.leaderboard-preview-size", 5, 1, 10);
         ConfigValues.integer(next, "feedback.milestone-level-interval", 50, 0, Integer.MAX_VALUE);
         ConfigValues.integer(next, "feedback.level-up-chat-interval-seconds", 10, 0, 86400);
         var nextTimeDisplay = new TimeDisplay((int) ConfigValues.integer(next, "display.time-format", 12, 12, 24));
+        ConfigValues.text(next, "display.job-progress-format", defaults.getString("display.job-progress-format"), 120);
+        ConfigValues.integer(next, "display.job-progress-bar-length", 10, 1, 20);
+        for (String key : List.of("display.job-progress-bar-filled", "display.job-progress-bar-empty")) {
+            if (ConfigValues.text(next, key, defaults.getString(key), 1).isEmpty())
+                throw new IllegalArgumentException(key + " must contain one character");
+        }
         ConfigValues.strings(next, "rules.excluded-worlds");
         for (String key : List.of("rules.travel-minimum-displacement", "rules.maximum-walk-blocks-per-sample", "rules.maximum-sail-blocks-per-sample")) {
             double value = ConfigValues.number(next, key, defaults.getDouble(key));
@@ -142,6 +151,7 @@ public final class JustJobsPlugin extends JavaPlugin {
         if (processing != null) processing.flush();
         ConfigFiles.save(getDataFolder().toPath(), next.saveToString(), jobsText);
         settings = next;
+        payoutMultiplier = nextPayoutMultiplier;
         registry = loadedJobs.registry();
         timeDisplay = nextTimeDisplay;
         levelMessages.clear();
@@ -194,7 +204,10 @@ public final class JustJobsPlugin extends JavaPlugin {
         return profile;
     }
     public BigDecimal hourlyLimit(JobRegistry.Job job) {
-        return job.hourlyLimit() == null ? new BigDecimal(settings.getString("economy.hourly-income-limit-per-job", "25")) : job.hourlyLimit();
+        return scaleMoney(job.hourlyLimit() == null ? new BigDecimal(settings.getString("economy.hourly-income-limit-per-job", "50")) : job.hourlyLimit());
+    }
+    public BigDecimal scaleMoney(BigDecimal amount) {
+        return payoutMultiplier.compareTo(BigDecimal.ONE) == 0 ? amount : amount.multiply(payoutMultiplier);
     }
     public BigDecimal capEarnings(PlayerProfile profile, String job, long now) {
         return paydayEnabled() ? profile.paycheck.earned(job, now) : profile.earnings.total(job, now);
@@ -251,7 +264,7 @@ public final class JustJobsPlugin extends JavaPlugin {
             Map<String, BigDecimal> bonusSources = null;
             for (var rule : rewards.rules()) if (rule.matches(activity, material, entity, detail)) {
                 xp += rule.xp() * rewardUnits;
-                BigDecimal amount = rule.money().multiply(BigDecimal.valueOf(rewardUnits));
+                BigDecimal amount = scaleMoney(rule.money().multiply(BigDecimal.valueOf(rewardUnits)));
                 if (rule.bonus()) {
                     if (bonusSources == null) bonusSources = new HashMap<>();
                     bonus = bonus.add(amount);
@@ -271,7 +284,8 @@ public final class JustJobsPlugin extends JavaPlugin {
             BigDecimal credited = profile.paycheck.earn(job.id(), allowed, limit, now, paydayInterval(), payday);
             // Keep rolling history so switching to immediate payouts doesn't grant a fresh hourly allowance.
             if (payday) profile.earnings.credit(job.id(), credited, BigDecimal.ZERO, now);
-            if (bonusSources != null) for (var source : bonusSources.entrySet()) credited = credited.add(profile.paycheck.earnBonus(job.id(), source.getKey(), source.getValue(), now, paydayInterval(), payday));
+            if (bonusSources != null) for (var source : bonusSources.entrySet()) credited = credited.add(profile.paycheck.earnBonus(job.id(), source.getKey(), source.getValue(), now, paydayInterval(), payday,
+                    settings.getBoolean("economy.whole-number-payouts", true)));
             profile.pending = profile.pending.add(credited);
             if (diagnostics != null) diagnostics.award(profile, job.id(), xp, money.add(bonus), credited);
             dirty.add(profile.id);
@@ -413,12 +427,16 @@ public final class JustJobsPlugin extends JavaPlugin {
             if (paying.contains(profile.id)) continue;
             profile.paycheck.reconcile(profile.pending);
             if (profile.paycheck.advance(now, paydayInterval(), paydayEnabled())) dirty.add(id);
-            BigDecimal amount = economy.payable(profile.paycheck.available());
+            if (settings.getBoolean("economy.whole-number-payouts", true) && profile.paycheck.deferBonusRemainders(paydayEnabled())) dirty.add(id);
+            boolean bonusPayment = true;
+            BigDecimal amount = economy.payable(profile.paycheck.available(true));
+            if (amount.signum() <= 0) { bonusPayment = false; amount = economy.payable(profile.paycheck.available(false)); }
             if (amount.signum() <= 0) continue;
             paying.add(profile.id);
             reservedAmounts.put(profile.id, amount);
+            if (bonusPayment) reservedBonuses.add(profile.id);
             profile.pending = profile.pending.subtract(amount);
-            var breakdown = profile.paycheck.take(amount);
+            var breakdown = profile.paycheck.take(amount, bonusPayment);
             dirty.add(profile.id);
             var payment = new DataStore.Payment(UUID.randomUUID().toString(), profile.id, profile.name, amount, breakdown);
             reservations.add(new DataStore.Reservation(profile.snapshot(), payment));
@@ -473,6 +491,7 @@ public final class JustJobsPlugin extends JavaPlugin {
                     var profile = players.get(settlement.player().id());
                     paying.remove(profile.id);
                     reservedAmounts.remove(profile.id);
+                    reservedBonuses.remove(profile.id);
                     if (profile.pending.signum() == 0) unpaid.remove(profile.id);
                     if (succeeded.contains(profile.id) && profile.pending.signum() > 0) payoutQueue.add(profile.id);
                 }
@@ -600,7 +619,8 @@ public final class JustJobsPlugin extends JavaPlugin {
     public long nextPayday() { return Paycheck.next(System.currentTimeMillis(), paydayInterval()); }
     public BigDecimal unpaidEarnings(PlayerProfile profile) { return profile.pending.add(reservedAmounts.getOrDefault(profile.id, BigDecimal.ZERO)); }
     public BigDecimal nextPaycheckAmount(PlayerProfile profile) {
-        BigDecimal earned = unpaidEarnings(profile);
+        BigDecimal earned = profile.pending.subtract(profile.paycheck.available(true));
+        if (!reservedBonuses.contains(profile.id)) earned = earned.add(reservedAmounts.getOrDefault(profile.id, BigDecimal.ZERO));
         return economy == null ? Money.payable(earned, settings.getBoolean("economy.whole-number-payouts", true), -1) : economy.preview(earned);
     }
     public void togglePaydayChat(Player player) {

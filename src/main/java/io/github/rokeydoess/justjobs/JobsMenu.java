@@ -27,7 +27,7 @@ import java.util.Set;
 import java.util.UUID;
 
 public final class JobsMenu implements Listener {
-    private enum Action { SETTINGS, BACK, BOSS_BAR, CHAT, PAYDAY_CHAT, TIME_FORMAT, PAYCHECK, HOME, ALL_RANKINGS, PREVIOUS, NEXT }
+    private enum Action { SETTINGS, BACK, BOSS_BAR, CHAT, PAYDAY_CHAT, TIME_FORMAT, PAYCHECK, HOME, ALL_RANKINGS, JOB_RANKING, PREVIOUS, NEXT }
     private final JustJobsPlugin plugin;
     private final Map<String, Ranking> rankings = new HashMap<>();
     private final Set<String> loading = new HashSet<>();
@@ -40,12 +40,14 @@ public final class JobsMenu implements Listener {
         final boolean settings;
         final int page;
         final String job;
+        final int parentPage;
         final Map<Integer, String> jobSlots = new HashMap<>();
         final Map<Integer, Action> controls = new HashMap<>();
         private Inventory inventory;
-        Page(boolean leaderboard, int page, String job) { this(leaderboard, page, job, false); }
-        Page(boolean leaderboard, int page, String job, boolean settings) {
+        Page(boolean leaderboard, int page, String job) { this(leaderboard, page, job, false, 0); }
+        Page(boolean leaderboard, int page, String job, boolean settings, int parentPage) {
             this.leaderboard = leaderboard; this.page = page; this.job = job; this.settings = settings;
+            this.parentPage = parentPage;
         }
         @Override public Inventory getInventory() { return inventory; }
     }
@@ -85,13 +87,18 @@ public final class JobsMenu implements Listener {
     }
 
     public void open(Player player, boolean leaderboard, int requestedPage, String selectedJob) {
+        if (!leaderboard && selectedJob != null) { openJob(player, selectedJob, requestedPage, 0); return; }
         var jobs = plugin.registry().jobs();
         var selected = selectedJob == null ? null : plugin.registry().get(selectedJob);
-        if (selectedJob != null && selected == null) { open(player, true, 0, null); return; }
+        if (selectedJob != null && selected == null) { open(player, leaderboard, 0, null); return; }
         var ranking = selected == null ? null : ranking(selectedJob);
         int count = selectedJob == null ? jobs.size() : ranking == null ? 0 : ranking.entries().size();
         int capacity = MenuLayout.CAPACITY;
-        int page = Math.clamp(requestedPage, 0, Math.max(0, (count - 1) / capacity));
+        var groups = new java.util.EnumMap<JobRegistry.Category, List<JobRegistry.Job>>(JobRegistry.Category.class);
+        for (var job : jobs) groups.computeIfAbsent(job.category(), ignored -> new ArrayList<>()).add(job);
+        int pages = selected == null ? groups.values().stream().mapToInt(group -> (group.size() + MenuLayout.GROUP_CAPACITY - 1) / MenuLayout.GROUP_CAPACITY).max().orElse(1)
+                : Math.max(1, (count + capacity - 1) / capacity);
+        int page = Math.clamp(requestedPage, 0, pages - 1);
         var holder = new Page(leaderboard, page, selectedJob);
         String title = selected != null ? selected.name() + " leaderboard" : leaderboard ? "Job leaderboards" : "Your jobs";
         holder.inventory = Bukkit.createInventory(holder, MenuLayout.SIZE, Component.text(title));
@@ -101,7 +108,7 @@ public final class JobsMenu implements Listener {
         for (int slot = 0; slot < inv.getSize(); slot++)
             if (slot < 9 || slot >= 36) inv.setItem(slot, item(border, " "));
         int visible = Math.min(capacity, Math.max(0, count - page * capacity));
-        var slots = selected == null ? MenuLayout.entries(visible) : MenuLayout.ranks(visible);
+        var slots = selected == null ? List.<Integer>of() : MenuLayout.ranks(visible);
         if (selected != null) {
             var entries = ranking == null ? List.<Entry>of() : ranking.entries();
             for (int index = page * capacity; index < Math.min(entries.size(), (page + 1) * capacity); index++) {
@@ -122,13 +129,19 @@ public final class JobsMenu implements Listener {
         } else {
             inv.setItem(MenuLayout.INFO, leaderboard ? item(Material.GOLDEN_HELMET, "Job leaderboards", "The best in each job.", "Choose a job to see the full rankings.")
                     : item(Material.BOOK, player.getName() + "'s jobs", "Every job tracks automatically.", "Unpaid earnings: " + plugin.currency(plugin.unpaidEarnings(profile)),
-                    "Page " + (page + 1) + " / " + Math.max(1, (count + capacity - 1) / capacity)));
-            for (int index = page * capacity; index < Math.min(jobs.size(), (page + 1) * capacity); index++) {
-                var job = jobs.get(index);
-                var lore = leaderboard ? preview(job) : progress(job, profile);
-                int slot = slots.get(index % capacity);
-                inv.setItem(slot, item(job.icon(), job.name(), lore.toArray(String[]::new)));
-                holder.jobSlots.put(slot, job.id());
+                    "Page " + (page + 1) + " / " + pages));
+            for (var category : JobRegistry.Category.values()) {
+                var group = groups.getOrDefault(category, List.of());
+                int start = Math.min(page * MenuLayout.GROUP_CAPACITY, group.size());
+                int end = Math.min(start + MenuLayout.GROUP_CAPACITY, group.size());
+                var row = MenuLayout.group(category, end - start);
+                for (int index = start; index < end; index++) {
+                    var job = group.get(index);
+                    var lore = leaderboard ? preview(job) : compact(job, profile);
+                    int slot = row.get(index - start);
+                    inv.setItem(slot, item(job.icon(), job.name(), lore.toArray(String[]::new)));
+                    holder.jobSlots.put(slot, job.id());
+                }
             }
         }
         if (count == 0) inv.setItem(22, item(selected != null && ranking == null ? Material.CLOCK : Material.BARRIER,
@@ -138,7 +151,7 @@ public final class JobsMenu implements Listener {
         if (!leaderboard) controls.add(Action.PAYCHECK);
         controls.add(Action.HOME);
         if (selected != null) controls.add(Action.ALL_RANKINGS);
-        if ((page + 1) * capacity < count) controls.add(Action.NEXT);
+        if (page + 1 < pages) controls.add(Action.NEXT);
         var controlSlots = MenuLayout.controls(controls.size());
         for (int i = 0; i < controls.size(); i++) {
             Action action = controls.get(i);
@@ -152,8 +165,48 @@ public final class JobsMenu implements Listener {
         player.openInventory(inv);
     }
 
+    private void openJob(Player player, String id, int requestedPage, int parentPage) {
+        var job = plugin.registry().get(id);
+        if (job == null) { open(player, false, parentPage, null); return; }
+        int pages = Math.max(1, (job.rules().size() + MenuLayout.CAPACITY - 1) / MenuLayout.CAPACITY);
+        int page = Math.clamp(requestedPage, 0, pages - 1);
+        var holder = new Page(false, page, id, false, parentPage);
+        holder.inventory = Bukkit.createInventory(holder, MenuLayout.SIZE, Component.text(job.name()));
+        var inv = holder.inventory; var profile = plugin.profile(player);
+        for (int slot = 0; slot < inv.getSize(); slot++)
+            if (slot < 9 || slot >= 36) inv.setItem(slot, item(Material.GRAY_STAINED_GLASS_PANE, " "));
+        var summary = progress(job, profile); summary.add("Page " + (page + 1) + " / " + pages);
+        inv.setItem(MenuLayout.INFO, item(job.icon(), job.name(), summary.toArray(String[]::new)));
+        int start = page * MenuLayout.CAPACITY, end = Math.min(start + MenuLayout.CAPACITY, job.rules().size());
+        var slots = MenuLayout.entries(end - start);
+        for (int i = start; i < end; i++) {
+            var rule = job.rules().get(i);
+            Material icon = rule.materials().stream().filter(Material::isItem).sorted().findFirst().orElse(job.icon());
+            inv.setItem(slots.get(i - start), item(icon, unit(job, rule), reward(job, rule),
+                    rule.bonus() ? "Immediate bonus; outside the job money cap."
+                            : plugin.hourlyLimit(job).signum() > 0 ? "Counts toward this job's money limit." : "No job money limit."));
+        }
+        var actions = new ArrayList<Action>();
+        if (page > 0) actions.add(Action.PREVIOUS);
+        actions.add(Action.BACK); actions.add(Action.PAYCHECK); actions.add(Action.JOB_RANKING);
+        if (page + 1 < pages) actions.add(Action.NEXT);
+        var controls = MenuLayout.controls(actions.size());
+        for (int i = 0; i < actions.size(); i++) {
+            holder.controls.put(controls.get(i), actions.get(i));
+            inv.setItem(controls.get(i), control(actions.get(i), profile, false));
+        }
+        holder.controls.put(MenuLayout.SETTINGS, Action.SETTINGS);
+        inv.setItem(MenuLayout.SETTINGS, control(Action.SETTINGS, profile, false));
+        inv.setItem(MenuLayout.CLOSE, item(Material.OAK_DOOR, "Close")); player.openInventory(inv);
+    }
+
+    private void reopen(Player player, Page previous, int page) {
+        if (!previous.leaderboard && previous.job != null) openJob(player, previous.job, page, previous.parentPage);
+        else open(player, previous.leaderboard, page, previous.job);
+    }
+
     private void openSettings(Player player, Page previous) {
-        var holder = new Page(previous.leaderboard, previous.page, previous.job, true);
+        var holder = new Page(previous.leaderboard, previous.page, previous.job, true, previous.parentPage);
         holder.inventory = Bukkit.createInventory(holder, 27, Component.text("Your settings"));
         var inv = holder.inventory;
         var border = previous.leaderboard ? Material.PURPLE_STAINED_GLASS_PANE : Material.GRAY_STAINED_GLASS_PANE;
@@ -187,6 +240,7 @@ public final class JobsMenu implements Listener {
             case PAYCHECK -> paycheck(profile);
             case HOME -> item(Material.BOOK, leaderboard ? "Back to your jobs" : "Leaderboards");
             case ALL_RANKINGS -> item(Material.COMPASS, "All leaderboards");
+            case JOB_RANKING -> item(Material.GOLDEN_HELMET, "Job leaderboard", "See the top players in this job.");
         };
     }
 
@@ -214,13 +268,34 @@ public final class JobsMenu implements Listener {
         lore.add(""); lore.add("Click for full rankings");
         return lore;
     }
+    private ArrayList<String> compact(JobRegistry.Job job, PlayerProfile profile) {
+        var progress = job.progression().progress(profile.xp(job.id()));
+        var limit = plugin.hourlyLimit(job);
+        var settings = plugin.settings();
+        String format = settings.getString("display.job-progress-format");
+        var lore = new ArrayList<String>();
+        if (!format.isBlank()) {
+            int segments = settings.getInt("display.job-progress-bar-length");
+            double fraction = progress.fraction();
+            int filled = (int) Math.floor(fraction * segments);
+            String bar = settings.getString("display.job-progress-bar-filled").repeat(filled)
+                    + settings.getString("display.job-progress-bar-empty").repeat(segments - filled);
+            lore.add(format.replace("{level}", Integer.toString(progress.level()))
+                    .replace("{percent}", Long.toString(Math.round(fraction * 100))).replace("{bar}", bar));
+        }
+        lore.add((plugin.paydayEnabled() ? "Earned this paycheck: " : "Earned this hour: ")
+                        + plugin.currency(plugin.capEarnings(profile, job.id(), System.currentTimeMillis()))
+                        + (limit.signum() > 0 ? " / " + plugin.currency(limit) : ""));
+        lore.add("");
+        lore.add("Click for activities and rewards");
+        return lore;
+    }
     private ArrayList<String> progress(JobRegistry.Job job, PlayerProfile profile) {
         var progress = job.progression().progress(profile.xp(job.id()));
         int filled = (int) Math.floor(progress.fraction() * 10);
         var lore = new ArrayList<>(List.of(job.description(), "", "Level " + progress.level(),
                 "■".repeat(filled) + "□".repeat(10 - filled) + "  " + Math.round(progress.fraction() * 100) + "%",
                 JustJobsPlugin.format(progress.xp()) + " / " + JustJobsPlugin.format(progress.required()) + " XP", ""));
-        for (var rule : job.rules()) lore.add(reward(job, rule));
         if (job.rules().stream().anyMatch(JobRegistry.Rule::bonus)) lore.add("Bonus rewards don't use your job money limit.");
         if (job.rules().stream().anyMatch(r -> r.activity() == JobRegistry.Activity.TRAVEL || r.activity() == JobRegistry.Activity.SAIL))
             lore.add("Next travel reward: " + Math.round(profile.travel.distance(job.id())) + " / " + Math.round(job.distancePerReward()) + " blocks");
@@ -229,7 +304,7 @@ public final class JobsMenu implements Listener {
                 + plugin.currency(plugin.capEarnings(profile, job.id(), System.currentTimeMillis())) + " / " + plugin.currency(limit));
         return lore;
     }
-    private String reward(JobRegistry.Job job, JobRegistry.Rule rule) {
+    private String unit(JobRegistry.Job job, JobRegistry.Rule rule) {
         boolean travel = rule.activity() == JobRegistry.Activity.TRAVEL || rule.activity() == JobRegistry.Activity.SAIL;
         double units = travel ? job.distancePerReward() : 1;
         String unit = switch (rule.activity()) {
@@ -271,7 +346,11 @@ public final class JobsMenu implements Listener {
             if (!rule.operations().isEmpty()) unit += " (" + String.join(", ", rule.operations().stream().sorted().toList()) + ")";
         }
         if (travel) unit = Math.round(units) + " " + unit;
-        return JustJobsPlugin.format(rule.xp() * units) + " XP + " + plugin.currencyRate(rule.money().multiply(java.math.BigDecimal.valueOf(units))) + " / " + unit
+        return unit;
+    }
+    private String reward(JobRegistry.Job job, JobRegistry.Rule rule) {
+        double units = rule.activity() == JobRegistry.Activity.TRAVEL || rule.activity() == JobRegistry.Activity.SAIL ? job.distancePerReward() : 1;
+        return JustJobsPlugin.format(rule.xp() * units) + " XP + " + plugin.currencyRate(plugin.scaleMoney(rule.money().multiply(java.math.BigDecimal.valueOf(units)))) + " / " + unit(job, rule)
                 + (rule.bonus() ? " (bonus)" : "");
     }
     private ItemStack item(Material material, String name, String... lore) {
@@ -297,18 +376,22 @@ public final class JobsMenu implements Listener {
             if (slot == page.inventory.getSize() - 1) player.closeInventory();
             else if (page.controls.containsKey(slot)) switch (page.controls.get(slot)) {
                 case SETTINGS -> openSettings(player, page);
-                case BACK -> open(player, page.leaderboard, page.page, page.job);
+                case BACK -> { if (page.settings) reopen(player, page, page.page); else open(player, false, page.parentPage, null); }
                 case BOSS_BAR -> { plugin.toggleBossBar(player); openSettings(player, page); }
                 case CHAT -> { plugin.toggleNotifications(player); openSettings(player, page); }
                 case PAYDAY_CHAT -> { plugin.togglePaydayChat(player); openSettings(player, page); }
                 case TIME_FORMAT -> { plugin.toggleTimeFormat(player); openSettings(player, page); }
-                case PAYCHECK -> open(player, page.leaderboard, page.page, page.job);
+                case PAYCHECK -> reopen(player, page, page.page);
                 case HOME -> open(player, !page.leaderboard, 0, null);
                 case ALL_RANKINGS -> open(player, true, 0, null);
-                case PREVIOUS -> open(player, page.leaderboard, page.page - 1, page.job);
-                case NEXT -> open(player, page.leaderboard, page.page + 1, page.job);
+                case JOB_RANKING -> open(player, true, 0, page.job);
+                case PREVIOUS -> reopen(player, page, page.page - 1);
+                case NEXT -> reopen(player, page, page.page + 1);
             }
-            else if (page.leaderboard && page.job == null && page.jobSlots.containsKey(slot)) open(player, true, 0, page.jobSlots.get(slot));
+            else if (page.job == null && page.jobSlots.containsKey(slot)) {
+                if (page.leaderboard) open(player, true, 0, page.jobSlots.get(slot));
+                else openJob(player, page.jobSlots.get(slot), 0, page.page);
+            }
         });
     }
     @EventHandler public void drag(InventoryDragEvent e) {

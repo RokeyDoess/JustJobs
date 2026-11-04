@@ -8,6 +8,60 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class PaycheckTest {
     static final long HOUR = 3_600_000;
+    @Test void wholeBonusPaysAloneAndItsFractionWaitsForTheSourceJobsPaycheck() {
+        var p = new Paycheck();
+        p.earn("exploring", new BigDecimal("0.125"), 1, HOUR, true);
+        p.earn("mining", new BigDecimal("0.03"), 2, HOUR, true);
+        p.earn("sailing", new BigDecimal("0.345"), 3, HOUR, true);
+        p.advance(HOUR, HOUR, true);
+        p.earn("cooking", new BigDecimal("5.25"), HOUR + 1, HOUR, true);
+        p.earnBonus("hunting", "Hunting: Wither", new BigDecimal("12.5"), HOUR + 2, HOUR, true, true);
+        assertThrows(IllegalArgumentException.class, () -> p.take(new BigDecimal("13"), true));
+        var paid = p.take(Money.payable(p.available(true), true, 2), true);
+        assertEquals(0, Paycheck.total(paid).compareTo(new BigDecimal("12")));
+        assertEquals(Map.of("Hunting: Wither", new BigDecimal("12")), Paycheck.bonusSources(paid));
+        assertFalse(paid.containsKey("cooking"));
+        assertEquals(Map.of("cooking", new BigDecimal("5.25"), "hunting", new BigDecimal("0.5")), Paycheck.byJob(p.snapshot().current()));
+        assertEquals(2 * HOUR, p.snapshot().next());
+        assertEquals(0, p.available(false).compareTo(new BigDecimal("0.5")));
+        assertEquals(0, p.earned("hunting", HOUR + 2).signum());
+    }
+    @Test void fractionalBonusesRemainSeparateAndPayInFull() {
+        var p = new Paycheck(); p.restore(HOUR, "mining", new BigDecimal("0.5"), true);
+        p.earnBonus("hunting", "Wither", new BigDecimal("12.5"), 1, HOUR, true, false);
+        assertEquals(Map.of("Wither", new BigDecimal("12.5")), Paycheck.bonusSources(p.take(new BigDecimal("12.5"), true)));
+        assertEquals(Map.of("mining", new BigDecimal("0.5")), p.snapshot().due());
+        assertTrue(p.snapshot().current().isEmpty());
+    }
+    @Test void subCoinBonusesWaitForPaydayWithoutUsingTheNormalCap() {
+        var p = new Paycheck();
+        p.earnBonus("hunting", "first", new BigDecimal("0.75"), 1, HOUR, true, true);
+        p.earnBonus("hunting", "second", new BigDecimal("0.75"), 2, HOUR, true, true);
+        assertEquals(0, p.available().signum());
+        assertEquals(BigDecimal.TEN, p.earn("hunting", BigDecimal.TEN, BigDecimal.TEN, 3, HOUR, true));
+        assertEquals(BigDecimal.TEN, p.earned("hunting", 3));
+        p.advance(HOUR, HOUR, true);
+        assertEquals(0, p.available(false).compareTo(new BigDecimal("11.5")));
+        assertEquals(0, Paycheck.byJob(p.take(new BigDecimal("11.5"), false)).get("hunting").compareTo(new BigDecimal("11.5")));
+    }
+    @Test void legacyAndPartiallyRefundedBonusesKeepEveryFraction() {
+        var p = new Paycheck(); p.earnBonus("hunting", "Wither", new BigDecimal("12.5"), 1, HOUR, true);
+        assertTrue(p.deferBonusRemainders(true)); assertFalse(p.deferBonusRemainders(true));
+        var unpaid = new HashMap<>(p.take(new BigDecimal("12"), true));
+        Paycheck.take(unpaid, new BigDecimal("0.25")); p.refund(unpaid);
+        assertTrue(p.deferBonusRemainders(true));
+        assertEquals(0, p.available(true).compareTo(new BigDecimal("11")));
+        assertEquals(Map.of("hunting", new BigDecimal("1.25")), Paycheck.byJob(p.snapshot().current()));
+        assertEquals(0, p.available(false).signum());
+    }
+    @Test void immediateModeKeepsBonusDepositsSeparateFromNormalMoney() {
+        var p = new Paycheck(); p.earn("mining", BigDecimal.TEN, 1, HOUR, false);
+        p.earnBonus("hunting", "Wither", new BigDecimal("12.5"), 2, HOUR, false, true);
+        assertEquals(0, p.available(true).compareTo(new BigDecimal("12")));
+        assertEquals(0, p.available(false).compareTo(new BigDecimal("10.5")));
+        assertEquals(0, Paycheck.total(p.take(new BigDecimal("12"), true)).compareTo(new BigDecimal("12")));
+        assertEquals(0, p.available(false).compareTo(new BigDecimal("10.5")));
+    }
     @Test void bossBonusesPreserveTheNormalAllowanceAndSurvivePartialRefunds() {
         var p = new Paycheck(); var cap = new BigDecimal("25");
         p.earnBonus("hunting", new BigDecimal("50"), 1, HOUR, true);

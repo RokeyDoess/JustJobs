@@ -285,7 +285,11 @@ public class ProcessingChecks extends CraftingChecks {
         var file = jobs.getDataFolder().toPath().resolve("jobs.yml"); var original = Files.readString(file);
         try {
             var config = YamlConfiguration.loadConfiguration(file.toFile());
-            for (int i = 0; i < 12; i++) config.set("jobs.extra_" + i + ".rules", List.of(Map.of("activity", "craft", "materials", List.of("FLOWER_POT"), "xp", 1, "money", "0")));
+            for (int i = 0; i < 12; i++) {
+                String path = "jobs.extra_" + i;
+                config.set(path + ".category", i < 4 ? "gathering" : i < 8 ? "adventure" : "crafting");
+                config.set(path + ".rules", List.of(Map.of("activity", "craft", "materials", List.of("FLOWER_POT"), "xp", 1, "money", "0")));
+            }
             config.save(file.toFile()); jobs.loadSettings();
             player = player(MAIN, "LayoutChecks"); var menus = new JobsMenu(jobs); menus.open(player, false, 0, null);
             check(((Map<Integer, String>) field(current.getHolder(), "jobSlots")).size() == 27, "a jobs page uses all twenty-seven content slots");

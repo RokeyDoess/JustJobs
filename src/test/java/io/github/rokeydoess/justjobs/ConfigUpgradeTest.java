@@ -7,6 +7,32 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 class ConfigUpgradeTest {
+    @Test void bossRetuningOnlyChangesRecognizedDefaultsOnce() {
+        var yaml = new YamlConfiguration(); yaml.set("config-version", 15);
+        var original = Map.of("activity", "boss-kill", "description", "Wither defeated (each contributor)",
+                "entities", List.of("WITHER"), "xp", 50, "money", "12.5", "bonus", true);
+        var dragon = Map.of("activity", "boss-kill", "description", "Ender Dragon defeated (each contributor)",
+                "entities", List.of("ENDER_DRAGON"), "xp", 200, "money", "50", "bonus", true);
+        yaml.set("jobs.hunting.rules", List.of(original, dragon));
+        var custom = new java.util.LinkedHashMap<String, Object>(original); custom.put("xp", 99);
+        var customDragon = new java.util.LinkedHashMap<String, Object>(dragon); customDragon.put("money", "30");
+        yaml.set("jobs.hunter.rules", List.of(custom, customDragon));
+        assertTrue(ConfigUpgrade.jobs(yaml));
+        assertEquals("10", yaml.getMapList("jobs.hunting.rules").getFirst().get("money"));
+        assertEquals("25", yaml.getMapList("jobs.hunting.rules").getLast().get("money"));
+        assertEquals(List.of(custom, customDragon), yaml.getMapList("jobs.hunter.rules"));
+        yaml.set("jobs.hunting.rules", List.of(original));
+        assertFalse(ConfigUpgrade.jobs(yaml));
+        assertEquals("12.5", yaml.getMapList("jobs.hunting.rules").getFirst().get("money"));
+        var removed = new YamlConfiguration(); removed.set("config-version", 15);
+        var normal = Map.of("activity", "mob-kill", "entities", List.of("ZOMBIE"), "money", "0.2");
+        removed.set("jobs.hunting.rules", List.of(normal)); ConfigUpgrade.jobs(removed);
+        assertEquals(List.of(normal), removed.getMapList("jobs.hunting.rules"));
+        yaml.set("config-version", 16); yaml.set("jobs.hunting.rules", List.of(original, dragon));
+        assertTrue(ConfigUpgrade.jobs(yaml));
+        assertEquals("12.5", yaml.getMapList("jobs.hunting.rules").getFirst().get("money"));
+        assertEquals("25", yaml.getMapList("jobs.hunting.rules").getLast().get("money"));
+    }
     @Test void bossRulesAreAddedWithoutChangingCustomRewardsOrRestoringDeletedJobs() {
         var yaml = new YamlConfiguration(); yaml.set("config-version", 14);
         var original = Map.of("activity", "mob-kill", "entities", List.of("ZOMBIE"), "xp", 8, "money", "0.2");
@@ -14,7 +40,7 @@ class ConfigUpgradeTest {
         assertTrue(ConfigUpgrade.jobs(yaml));
         var rules = yaml.getMapList("jobs.hunting.rules");
         assertEquals(original, rules.getFirst()); assertEquals(3, rules.size());
-        assertEquals("50", rules.get(1).get("money")); assertEquals("12.5", rules.get(2).get("money"));
+        assertEquals("25", rules.get(1).get("money")); assertEquals("10", rules.get(2).get("money"));
         assertEquals(true, rules.get(1).get("bonus")); assertFalse(yaml.contains("jobs.cooking"));
         assertFalse(ConfigUpgrade.jobs(yaml));
         var custom = new YamlConfiguration(); custom.set("config-version", 14);
@@ -181,15 +207,20 @@ class ConfigUpgradeTest {
         ConfigUpgrade.jobs(yaml);
         assertEquals("0.1667", yaml.getMapList("jobs.hunting.rules").getFirst().get("money"));
     }
-    @Test void lowerDefaultCapKeepsCustomLimitsAndSpawnerPreferences() {
-        for (String cap : List.of("100", "100.00", "40", "0")) {
-            var yaml = new YamlConfiguration(); yaml.set("config-version", 2);
-            yaml.set("economy.hourly-income-limit-per-job", cap); yaml.set("rules.reward-spawner-mobs", true);
-            ConfigUpgrade.settings(yaml);
-            assertEquals(cap.startsWith("100") ? "25" : cap, yaml.getString("economy.hourly-income-limit-per-job"));
-            assertTrue(yaml.getBoolean("rules.reward-spawner-mobs"));
-            yaml.set("economy.hourly-income-limit-per-job", "100");
-            ConfigUpgrade.settings(yaml); assertEquals("100", yaml.getString("economy.hourly-income-limit-per-job"));
+    @Test void oldDefaultCapsUpgradeWithoutReplacingCustomLimits() {
+        for (int version : List.of(2, 4)) {
+            String former = version == 2 ? "100" : "25";
+            String custom = version == 2 ? "25" : "100";
+            for (String cap : List.of(former, former + ".00", custom, "40", "0")) {
+                var yaml = new YamlConfiguration(); yaml.set("config-version", version);
+                yaml.set("economy.hourly-income-limit-per-job", cap); yaml.set("rules.reward-spawner-mobs", true);
+                ConfigUpgrade.settings(yaml);
+                assertEquals(cap.startsWith(former) ? "50" : cap, yaml.getString("economy.hourly-income-limit-per-job"));
+                assertTrue(yaml.getBoolean("rules.reward-spawner-mobs"));
+                yaml.set("economy.hourly-income-limit-per-job", former);
+                ConfigUpgrade.settings(yaml);
+                assertEquals(former, yaml.getString("economy.hourly-income-limit-per-job"));
+            }
         }
     }
     @Test void oldDefaultsGetNewNamesAndRatesWithoutChangingJobIds() {
@@ -218,7 +249,7 @@ class ConfigUpgradeTest {
         yaml.set("jobs.sailor.rules", List.of(Map.of("activity", "sail", "money", "0.123")));
         yaml.set("jobs.sailor.distance-per-reward", 300);
         ConfigUpgrade.jobs(yaml);
-        assertEquals(15, yaml.getInt("config-version"));
+        assertEquals(17, yaml.getInt("config-version"));
         assertEquals("0.0075", yaml.getMapList("jobs.digger.rules").getFirst().get("money"));
         assertEquals(500, yaml.getInt("jobs.explorer.distance-per-reward"));
         assertEquals(300, yaml.getInt("jobs.sailor.distance-per-reward"));
@@ -363,7 +394,7 @@ class ConfigUpgradeTest {
         assertEquals(500, yaml.getInt("jobs.exploring.distance-per-reward"));
         assertEquals(500, yaml.getInt("jobs.sailing.distance-per-reward"));
         assertEquals("0.0075", yaml.getMapList("jobs.digging.rules").getFirst().get("money"));
-        assertEquals(15, yaml.getInt("config-version"));
+        assertEquals(17, yaml.getInt("config-version"));
         assertFalse(ConfigUpgrade.jobs(yaml));
     }
     @Test void fishingAndTravelUpgradeKeepsCustomRewardsSelectorsAndIntervals() {
@@ -388,7 +419,7 @@ class ConfigUpgradeTest {
             yaml.set("rules.reward-spawner-mobs", true);
             ConfigUpgrade.settings(yaml);
             assertFalse(yaml.getBoolean("rules.reward-spawner-mobs"));
-            assertEquals(4, yaml.getInt("config-version"));
+            assertEquals(5, yaml.getInt("config-version"));
             yaml.set("rules.reward-spawner-mobs", true);
             ConfigUpgrade.settings(yaml);
             assertTrue(yaml.getBoolean("rules.reward-spawner-mobs"));
