@@ -48,6 +48,7 @@ public final class JustJobsPlugin extends JavaPlugin {
     private final List<BukkitTask> scheduled = new ArrayList<>();
     private volatile boolean storageFailed;
     private JobsMenu menus;
+    private RecordsMenu records;
     private VaultPayments economy;
     private Boolean economyAvailable;
     private NaturalBlocks natural;
@@ -77,6 +78,7 @@ public final class JustJobsPlugin extends JavaPlugin {
             worker = Executors.newSingleThreadExecutor(Thread.ofPlatform().name("JustJobs-storage").factory());
             natural = new NaturalBlocks(this);
             menus = new JobsMenu(this);
+            records = new RecordsMenu(this, menus);
             activities = new ActivityListener(this, natural);
             diagnostics = new Diagnostics(getLogger());
             getServer().getPluginManager().registerEvents(natural, this);
@@ -89,6 +91,7 @@ public final class JustJobsPlugin extends JavaPlugin {
             getServer().getPluginManager().registerEvents(processing, this);
             getServer().getPluginManager().registerEvents(new AdditionalActivities(this, natural), this);
             getServer().getPluginManager().registerEvents(menus, this);
+            getServer().getPluginManager().registerEvents(records, this);
             refreshEconomy();
             scheduleTasks();
             queueUnpaid();
@@ -138,6 +141,9 @@ public final class JustJobsPlugin extends JavaPlugin {
                 throw new IllegalArgumentException(key + " must contain one character");
         }
         ConfigValues.strings(next, "rules.excluded-worlds");
+        double elytraMultiplier = ConfigValues.number(next, "rules.elytra-distance-multiplier", 0.15);
+        if (elytraMultiplier < 0 || elytraMultiplier > 1)
+            throw new IllegalArgumentException("rules.elytra-distance-multiplier must be between 0 and 1");
         for (String key : List.of("rules.travel-minimum-displacement", "rules.maximum-walk-blocks-per-sample", "rules.maximum-sail-blocks-per-sample")) {
             double value = ConfigValues.number(next, key, defaults.getDouble(key));
             if (!Double.isFinite(value) || value <= 0 || value > 1000) throw new IllegalArgumentException(key + " must be positive and at most 1000");
@@ -192,6 +198,19 @@ public final class JustJobsPlugin extends JavaPlugin {
         return display.format(timestamp, java.time.ZoneId.systemDefault());
     }
     public JobRegistry registry() { return registry; }
+    public RecordsMenu records() { return records; }
+    public long economySince() { return store.economySince(); }
+    public void history(UUID player, java.util.function.Consumer<List<DataStore.Receipt>> callback) {
+        worker.execute(() -> {
+            try {
+                var receipts = store.history(player);
+                main(() -> callback.accept(receipts));
+            } catch (Exception e) {
+                getLogger().log(Level.WARNING, "Could not load payment history", e);
+                main(() -> callback.accept(null));
+            }
+        });
+    }
     public Map<UUID, PlayerProfile> players() { return players; }
     public PlayerProfile profile(Player player) {
         var profile = players.get(player.getUniqueId());
@@ -280,13 +299,18 @@ public final class JustJobsPlugin extends JavaPlugin {
             profile.xp.put(job.id(), after);
             boolean payday = paydayEnabled();
             BigDecimal limit = hourlyLimit(job);
+            BigDecimal previousEarnings = capEarnings(profile, job.id(), now);
             BigDecimal allowed = payday ? money : profile.earnings.credit(job.id(), money, limit, now);
             BigDecimal credited = profile.paycheck.earn(job.id(), allowed, limit, now, paydayInterval(), payday);
+            boolean reachedCap = money.signum() > 0 && limit.signum() > 0 && previousEarnings.compareTo(limit) < 0
+                    && previousEarnings.add(credited).compareTo(limit) >= 0;
             // Keep rolling history so switching to immediate payouts doesn't grant a fresh hourly allowance.
             if (payday) profile.earnings.credit(job.id(), credited, BigDecimal.ZERO, now);
             if (bonusSources != null) for (var source : bonusSources.entrySet()) credited = credited.add(profile.paycheck.earnBonus(job.id(), source.getKey(), source.getValue(), now, paydayInterval(), payday,
                     settings.getBoolean("economy.whole-number-payouts", true)));
             profile.pending = profile.pending.add(credited);
+            var stats = profile.economy(job.id());
+            stats.earnings(credited, money.add(bonus).subtract(credited), reachedCap);
             if (diagnostics != null) diagnostics.award(profile, job.id(), xp, money.add(bonus), credited);
             dirty.add(profile.id);
             if (credited.signum() > 0) {
@@ -477,12 +501,14 @@ public final class JustJobsPlugin extends JavaPlugin {
             BigDecimal credited = results.get(payment.id()).credited();
             var remainder = new HashMap<>(payment.jobs());
             paidJobs.put(payment.id(), Paycheck.take(remainder, credited));
+            Paycheck.byJob(paidJobs.get(payment.id())).forEach((job, amount) -> profile.economy(job).paid(amount));
             profile.paycheck.refund(remainder);
             profile.pending = profile.pending.add(payment.amount().subtract(credited));
             reservedAmounts.put(profile.id, credited);
             if (credited.signum() > 0) succeeded.add(profile.id);
             dirty.add(profile.id);
-            settlements.add(new DataStore.Settlement(payment.id(), credited.compareTo(payment.amount()) == 0 ? "PAID" : credited.signum() > 0 ? "PARTIAL" : "REFUNDED", profile.snapshot()));
+            settlements.add(new DataStore.Settlement(payment.id(), credited.compareTo(payment.amount()) == 0 ? "PAID" : credited.signum() > 0 ? "PARTIAL" : "REFUNDED",
+                    profile.snapshot(), paidJobs.get(payment.id()), System.currentTimeMillis()));
         }
         submit(() -> {
             store.settle(settlements);
@@ -509,9 +535,12 @@ public final class JustJobsPlugin extends JavaPlugin {
 
     @Override public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         String sub = args.length == 0 ? "" : args[0].toLowerCase(java.util.Locale.ROOT);
-        if (List.of("reload", "earnings", "backup").contains(sub)) {
+        if (List.of("reload", "earnings", "backup", "economy").contains(sub)) {
             if (!sender.hasPermission("justjobs.admin")) { sender.sendMessage("You don't have permission to do that."); return true; }
-            if (sub.equals("backup")) backup(sender);
+            if (sub.equals("economy")) {
+                if (sender instanceof Player player) records.openEconomy(player, 0);
+                else records.economyText(sender);
+            } else if (sub.equals("backup")) backup(sender);
             else if (sub.equals("reload")) {
                 try {
                     loadSettings();
@@ -519,7 +548,9 @@ public final class JustJobsPlugin extends JavaPlugin {
                     scheduleTasks();
                     queueUnpaid();
                     menus.clearRankings();
-                    for (var player : Bukkit.getOnlinePlayers()) if (player.getOpenInventory().getTopInventory().getHolder() instanceof JobsMenu.Page) player.closeInventory();
+                    for (var player : Bukkit.getOnlinePlayers())
+                        if (player.getOpenInventory().getTopInventory().getHolder() instanceof JobsMenu.Page
+                                || player.getOpenInventory().getTopInventory().getHolder() instanceof RecordsMenu.Page) player.closeInventory();
                     for (var id : new ArrayList<>(bars.keySet())) hideBar(id);
                     sender.sendMessage("Reloaded " + registry.jobs().size() + " jobs and all settings.");
                 } catch (Exception e) { sender.sendMessage("Reload rejected; previous settings retained: " + e.getMessage()); }
@@ -535,14 +566,15 @@ public final class JustJobsPlugin extends JavaPlugin {
             }
             return true;
         }
-        if (!(sender instanceof Player player)) { sender.sendMessage("Open jobs in-game, or use /jobs reload, /jobs backup or /jobs earnings <player>."); return true; }
+        if (!(sender instanceof Player player)) { sender.sendMessage("Open jobs in-game, or use /jobs reload, /jobs backup, /jobs economy or /jobs earnings <player>."); return true; }
         if (sub.equals("notifications")) {
             toggleNotifications(player);
         } else if (sub.equals("bossbar")) toggleBossBar(player);
         else if (sub.equals("payday")) togglePaydayChat(player);
         else if (sub.equals("leaderboard")) menus.open(player, true, 0, null);
+        else if (sub.equals("history")) records.openHistory(player, 0);
         else if (sub.isEmpty()) menus.open(player, false, 0, null);
-        else player.sendMessage("Usage: /jobs [leaderboard|notifications|bossbar|payday]");
+        else player.sendMessage("Usage: /jobs [leaderboard|history|notifications|bossbar|payday]");
         return true;
     }
 
@@ -555,8 +587,8 @@ public final class JustJobsPlugin extends JavaPlugin {
             return List.copyOf(names);
         }
         if (args.length != 1) return List.of();
-        var choices = new ArrayList<>(List.of("leaderboard", "notifications", "bossbar", "payday"));
-        if (sender.hasPermission("justjobs.admin")) choices.addAll(List.of("reload", "earnings", "backup"));
+        var choices = new ArrayList<>(List.of("leaderboard", "history", "notifications", "bossbar", "payday"));
+        if (sender.hasPermission("justjobs.admin")) choices.addAll(List.of("reload", "earnings", "backup", "economy"));
         return choices.stream().filter(s -> s.startsWith(args[0].toLowerCase(java.util.Locale.ROOT))).toList();
     }
 
@@ -586,7 +618,9 @@ public final class JustJobsPlugin extends JavaPlugin {
         if (processing != null) processing.flush();
         if (activities != null) activities.stopTravel();
         for (UUID id : new ArrayList<>(bars.keySet())) hideBar(id);
-        for (var player : Bukkit.getOnlinePlayers()) if (player.getOpenInventory().getTopInventory().getHolder() instanceof JobsMenu.Page) player.closeInventory();
+        for (var player : Bukkit.getOnlinePlayers())
+            if (player.getOpenInventory().getTopInventory().getHolder() instanceof JobsMenu.Page
+                    || player.getOpenInventory().getTopInventory().getHolder() instanceof RecordsMenu.Page) player.closeInventory();
         if (worker != null) {
             if (!storageFailed) save();
             worker.shutdown();

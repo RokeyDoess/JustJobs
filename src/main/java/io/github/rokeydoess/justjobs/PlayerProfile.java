@@ -15,6 +15,7 @@ public final class PlayerProfile {
     public Integer timeFormat;
     public BigDecimal pending = BigDecimal.ZERO;
     public final Map<String, Double> xp = new HashMap<>();
+    public final Map<String, JobEconomy> economy = new HashMap<>();
     public final Earnings earnings = new Earnings();
     public final TravelProgress travel = new TravelProgress();
     public final java.util.Set<String> biomes = new java.util.HashSet<>();
@@ -22,12 +23,16 @@ public final class PlayerProfile {
 
     public PlayerProfile(UUID id, String name) { this.id = id; this.name = name; }
     public double xp(String job) { return xp.getOrDefault(job, 0.0); }
+    public JobEconomy economy(String job) { return economy.computeIfAbsent(job, ignored -> new JobEconomy()); }
     public Snapshot snapshot() { return snapshot(System.currentTimeMillis()); }
     public Snapshot snapshot(long now) {
         paycheck.reconcile(pending);
-        return new Snapshot(id, name, notifications, bossBar, pending, Map.copyOf(xp), earnings.snapshot(now), travel.snapshot(), paydayChat, paycheck.snapshot(), timeFormat, java.util.Set.copyOf(biomes));
+        var savedStats = new HashMap<String, JobEconomy.Snapshot>();
+        economy.forEach((job, stats) -> savedStats.put(job, stats.snapshot()));
+        return new Snapshot(id, name, notifications, bossBar, pending, Map.copyOf(xp), earnings.snapshot(now), travel.snapshot(), paydayChat, paycheck.snapshot(), timeFormat, java.util.Set.copyOf(biomes), Map.copyOf(savedStats));
     }
     public record Snapshot(UUID id, String name, boolean notifications, boolean bossBar, BigDecimal pending,
                            Map<String, Double> xp, Map<String, Map<Long, BigDecimal>> earnings, Map<String, Double> travel,
-                           boolean paydayChat, Paycheck.Snapshot paycheck, Integer timeFormat, java.util.Set<String> biomes) { }
+                           boolean paydayChat, Paycheck.Snapshot paycheck, Integer timeFormat, java.util.Set<String> biomes,
+                           Map<String, JobEconomy.Snapshot> economy) { }
 }

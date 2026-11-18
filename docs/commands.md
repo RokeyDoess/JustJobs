@@ -6,6 +6,7 @@ All jobs track automatically. Players don't need a command to start earning.
 | --- | --- |
 | `/jobs` | Open your jobs, levels, and progress; click a job for activities and rewards |
 | `/jobs leaderboard` | Open the job leaderboards |
+| `/jobs history` | View your latest 30 confirmed deposits and their job breakdowns |
 | `/jobs bossbar` | Toggle your progress bar |
 | `/jobs notifications` | Toggle your level-up chat messages |
 | `/jobs payday` | Toggle your payday chat messages |
@@ -14,7 +15,9 @@ All three feedback options start enabled and are saved per player. Click the com
 
 The clock in Settings switches your time displays between 12-hour (AM/PM) and 24-hour time. Your choice is saved; until you pick one, the server's default applies.
 
-“Next paycheck” stays on the jobs page. It shows the next distribution time, a countdown, and the payout earned so far, with the server's payout rounding applied. Fractional leftovers stay saved. Click it or reopen the menu to refresh. Hover over “Payday!” in a payment message to see the nonzero job amounts included in that deposit.
+“Next paycheck” stays on the jobs page. It shows the next distribution time, a countdown, and the payout earned so far, with the server's payout rounding applied. Fractional leftovers stay saved. Click it for paycheck history, or reopen the jobs menu to refresh the preview. Hover over “Payday!” in a payment message to see the nonzero job amounts included in that deposit.
+
+History shows the actual amount deposited, its date, and each job's share. Bonus deposits have their own entry. Failed attempts stay out of history, and a partial payment shows only the amount received. Entries start when this update is installed and survive restarts. Dates use the server's timezone and your chosen clock format.
 
 Bonuses pay immediately. Hover over “Bonus!” in their deposit message to see the source. The server can disable these messages separately from payday chat.
 
@@ -32,9 +35,12 @@ Job milestones are announced in global chat every 50 levels by default. The serv
 | --- | --- |
 | `/jobs reload` | Reload both config files and apply every setting |
 | `/jobs earnings [player]` | Show earnings toward each job's cap and the shared unpaid balance |
+| `/jobs economy` | Open server earnings, deposits, and money cap totals by job. Console receives a text report |
 | `/jobs backup` | Save a checked copy of the job database in `plugins/JustJobs/backups/` |
 
 `/jobs earnings` completes matching player names as you type, including offline players with saved job data. Name suggestions are only available to admins.
+
+The economy overview records from its displayed start date. Earned money includes bonuses and money waiting for payday. Deposited money includes confirmed payments, which may cover earnings from before tracking began. The unpaid balance also includes earlier earnings carried forward. “Money above cap” is the amount withheld by job caps. “Cap reached” counts a player reaching a job's limit, once until their allowance returns. Repeated actions at the cap don't add more cap reaches. Reopen the overview to refresh it.
 
 Reload applies payday timing, payout retries, saving, travel intervals, and diagnostic logging too. Changing payday timing keeps unpaid money. Invalid settings leave the previous settings running, with an error explaining what needs fixing.
 

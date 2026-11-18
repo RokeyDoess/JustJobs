@@ -21,6 +21,8 @@ Load a furnace yourself and the earnings are yours. Hopper-fed ingredients pay t
 
 Paychecks arrive automatically every real-time hour, including for offline players. Hover over “Payday!” in chat to see what each job paid. Whole-number payouts carry small remainders forward, so no earnings go to waste. Immediate payouts are available too.
 
+Players can look back through their recent paychecks. Server owners get an economy overview showing what each job generates and how often players reach its cap.
+
 All jobs live in one `jobs.yml`. Change rewards, adjust leveling, disable jobs, or add your own. Each job has a configurable money cap that resets at payday; XP keeps counting after it. A single payout multiplier scales all rewards and money caps together.
 
 ## Install

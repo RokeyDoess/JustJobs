@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.1 (2026-11-17)
+
+- Added paycheck history with dates and job breakdowns for the latest 30 confirmed deposits, including bonuses.
+- Added an admin economy overview showing earnings, deposits, money withheld by caps, and how often players reach them. Reports start recording with this update.
+- Elytra flight credits 15% of horizontal distance toward Exploring's XP and money milestones. Adjust the rate with `rules.elytra-distance-multiplier`.
+- Hid the four vanilla brick lines on Archaeology's decorated pot reward.
+
 ## 1.2.0 (2026-11-04)
 
 - Centered the jobs and leaderboard selectors in Gathering, Crafting & Trade, and Adventure rows. Archaeology sits in Adventure. Compact job entries show level, a configurable progress bar, and earnings. Click a job for its activities, rewards, and detailed progress. Larger groups and reward lists use additional pages.

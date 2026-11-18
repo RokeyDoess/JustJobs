@@ -78,8 +78,10 @@ rules:
   travel-sample-ticks: 20
   # Sailing distance collected before applying a sample; measured in blocks.
   travel-minimum-displacement: 0.5
-  # Maximum horizontal walking distance counted per second, including jumps.
+  # Maximum horizontal distance credited per second from walking, jumping, and scaled Elytra flight.
   maximum-walk-blocks-per-sample: 12
+  # Fraction of horizontal Elytra distance credited toward travel rewards. 0 disables flight distance.
+  elytra-distance-multiplier: 0.15
   # Maximum sailing distance counted per sample, in blocks.
   maximum-sail-blocks-per-sample: 35
 development:

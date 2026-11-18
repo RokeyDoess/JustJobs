@@ -200,7 +200,7 @@ public final class JobsMenu implements Listener {
         inv.setItem(MenuLayout.CLOSE, item(Material.OAK_DOOR, "Close")); player.openInventory(inv);
     }
 
-    private void reopen(Player player, Page previous, int page) {
+    void reopen(Player player, Page previous, int page) {
         if (!previous.leaderboard && previous.job != null) openJob(player, previous.job, page, previous.parentPage);
         else open(player, previous.leaderboard, page, previous.job);
     }
@@ -250,6 +250,7 @@ public final class JobsMenu implements Listener {
         var lore = new ArrayList<>(List.of("Distribution: " + when, "Payout so far: " + plugin.currency(plugin.nextPaycheckAmount(profile))));
         if (plugin.paydayEnabled()) lore.add("Next payday in " + seconds / 60 + "m " + seconds % 60 + "s");
         lore.add("Reopen to refresh.");
+        lore.add("Click for paycheck history.");
         return item(Material.CLOCK, "Next paycheck", lore.toArray(String[]::new));
     }
 
@@ -353,7 +354,7 @@ public final class JobsMenu implements Listener {
         return JustJobsPlugin.format(rule.xp() * units) + " XP + " + plugin.currencyRate(plugin.scaleMoney(rule.money().multiply(java.math.BigDecimal.valueOf(units)))) + " / " + unit(job, rule)
                 + (rule.bonus() ? " (bonus)" : "");
     }
-    private ItemStack item(Material material, String name, String... lore) {
+    static ItemStack item(Material material, String name, String... lore) {
         var item = new ItemStack(material);
         var meta = item.getItemMeta();
         meta.displayName(Component.text(name, NamedTextColor.GOLD).decoration(TextDecoration.ITALIC, false));
@@ -362,7 +363,8 @@ public final class JobsMenu implements Listener {
         item.setData(DataComponentTypes.TOOLTIP_DISPLAY, TooltipDisplay.tooltipDisplay().addHiddenComponents(
                 DataComponentTypes.ATTRIBUTE_MODIFIERS, DataComponentTypes.ENCHANTMENTS, DataComponentTypes.STORED_ENCHANTMENTS,
                 DataComponentTypes.UNBREAKABLE, DataComponentTypes.DAMAGE, DataComponentTypes.MAX_DAMAGE, DataComponentTypes.TOOL,
-                DataComponentTypes.WEAPON, DataComponentTypes.TRIM, DataComponentTypes.DYED_COLOR).build());
+                DataComponentTypes.WEAPON, DataComponentTypes.TRIM, DataComponentTypes.DYED_COLOR,
+                DataComponentTypes.POT_DECORATIONS).build());
         return item;
     }
     @EventHandler public void click(InventoryClickEvent e) {
@@ -381,7 +383,7 @@ public final class JobsMenu implements Listener {
                 case CHAT -> { plugin.toggleNotifications(player); openSettings(player, page); }
                 case PAYDAY_CHAT -> { plugin.togglePaydayChat(player); openSettings(player, page); }
                 case TIME_FORMAT -> { plugin.toggleTimeFormat(player); openSettings(player, page); }
-                case PAYCHECK -> reopen(player, page, page.page);
+                case PAYCHECK -> plugin.records().openHistory(player, 0, page);
                 case HOME -> open(player, !page.leaderboard, 0, null);
                 case ALL_RANKINGS -> open(player, true, 0, null);
                 case JOB_RANKING -> open(player, true, 0, page.job);

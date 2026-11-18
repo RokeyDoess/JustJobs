@@ -45,6 +45,14 @@ public final class GroupedMenuChecks extends ReleaseChecks {
                         && current.getItem(41).getType() == Material.BOOK && current.getItem(44).getType() == Material.OAK_DOOR,
                 "the overview preserves the existing top and bottom controls");
         progressFormat();
+        menus.open(player, false, 0, "archaeology");
+        var pot = Arrays.stream(current.getContents()).filter(Objects::nonNull)
+                .filter(item -> item.getType() == Material.DECORATED_POT).findFirst().orElseThrow();
+        var tooltip = pot.getData(io.papermc.paper.datacomponent.DataComponentTypes.TOOLTIP_DISPLAY);
+        check(tooltip.hiddenComponents().contains(io.papermc.paper.datacomponent.DataComponentTypes.POT_DECORATIONS)
+                        && pot.getItemMeta().lore().stream().map(PaydayChecks::plain).anyMatch(line -> line.contains("/ natural decorated pot broken")),
+                "Archaeology shows the pot reward without vanilla decoration lines");
+        menus.open(player, false, 0, null);
         click(jobSlot("mining")); later(2, this::miningDetails);
     }
     void progressFormat() throws Exception {

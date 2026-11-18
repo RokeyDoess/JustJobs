@@ -152,7 +152,9 @@ Your economy must make deposits visible in its Vault balance immediately. Vault 
 
 ## Travel and leveling
 
-Exploring and Sailing update every 500 blocks by default. Each job's `distance-per-reward` changes the update interval. Rule rates stay per block, so changing the interval doesn't change the total reward. Unfinished distance is saved. Slow sailing samples accumulate rather than being discarded.
+Exploring and Sailing update every 500 credited blocks by default. Each job's `distance-per-reward` changes the update interval. Rule rates stay per credited block, so changing the interval doesn't change the total reward. Unfinished distance is saved. Slow sailing samples accumulate rather than being discarded.
+
+Elytra flight credits 15% of horizontal distance toward Exploring's travel rewards. Flying 1,000 blocks adds the same progress as walking 150, and both count toward the same XP and money milestones. The usual travel speed ceiling applies to the credited distance. Set `rules.elytra-distance-multiplier` between `0` and `1` to tune it. First visits to new biomes have their own reward.
 
 Sailing checks run only while players are riding boats. Boarding starts the timer, and the last rider leaving stops it. Reloading picks up players already in boats. `rules.travel-sample-ticks` controls the sampling interval; only the driver earns rewards.
 
@@ -222,7 +224,8 @@ These are in `config.yml`, with short comments beside each setting. Missing comm
 | `rules.reward-spawner-mobs` | false | Allow spawner mobs and other artificial spawns |
 | `rules.travel-sample-ticks` | 20 | Sailing check interval, in server ticks |
 | `rules.travel-minimum-displacement` | 0.5 | Distance collected before applying a sailing sample |
-| `rules.maximum-walk-blocks-per-sample` | 12 | Maximum walking distance counted per second |
+| `rules.maximum-walk-blocks-per-sample` | 12 | Maximum credited travel distance per second, including scaled Elytra flight |
+| `rules.elytra-distance-multiplier` | 0.15 | Fraction of horizontal Elytra distance credited toward travel rewards. `0` disables flight distance |
 | `rules.maximum-sail-blocks-per-sample` | 35 | Maximum sailing distance counted per sample |
 
 Milestone announcements say `PlayerName has reached level 50 Mining`. They go to global chat even if the earning player has personal level-up messages turned off. Changing the interval with `/jobs reload` applies to future level gains and doesn't announce past milestones. A reward that skips several milestones announces only the highest one crossed.
@@ -230,6 +233,8 @@ Milestone announcements say `PlayerName has reached level 50 Mining`. They go to
 Clock times use the server's timezone. `display.time-format: 12` shows times such as `1:00 PM`; `24` shows `13:00`. This default applies to the next-paycheck entry and other clock displays until a player chooses their own format in Settings. Personal choices survive restarts and aren't changed by config reloads. Use `/jobs reload` after changing the default.
 
 ## Diagnostic logging
+
+Admins can use `/jobs economy` for saved totals of money earned, deposited, and withheld by job caps. It also counts how often players reach each job's cap. These totals start with this update and persist across restarts, independently of verbose logging. Players can view their latest 30 confirmed deposits through `/jobs history` or the paycheck clock. Both reports show when recording began.
 
 Set `development.verbose-logging: true` to write periodic summaries to the server log. `development.summary-interval-seconds` defaults to 300 and accepts 10–3600. Logging is off by default and reloadable. It adds no per-action log messages.
 
@@ -241,7 +246,7 @@ Only survival and adventure players earn rewards. Digging and Mining require nat
 
 Hunting excludes spawners, trial spawners, spawn eggs, and other artificial spawns by default. These mobs give neither job XP nor money, even after a transformation such as a zombie becoming a drowned. Set `rules.reward-spawner-mobs: true` to allow them; the setting applies to all mob-kill jobs.
 
-Tracking starts when JustJobs is installed. Older placed blocks and changes made by world-editing tools may not be recognized. Mining excludes generated stone and piston-moved blocks. Travel excludes flight, sustained falls, swimming, teleports, passengers, and boats on land or ice. Ordinary jumps count normally.
+Tracking starts when JustJobs is installed. Older placed blocks and changes made by world-editing tools may not be recognized. Mining excludes generated stone and piston-moved blocks. Travel accepts walking, ordinary jumps, and scaled Elytra flight. Swimming, teleports, creative flight, sustained falls outside gliding, passengers, and boats on land or ice don't count.
 
 If you add crafting rules, avoid recipes that can be reversed or recolored repeatedly. The legacy `block-place` activity can still be farmed by moving materials to fresh locations; no default job uses it.
 
@@ -250,5 +255,7 @@ Progress saves every 30 seconds and on normal shutdown. A crash can lose unsaved
 Older configs upgrade once. Recognized default rates and shared caps move to the new defaults. A shared cap matching the old default for its config version upgrades to 50. Custom values, job overrides, and saved progress stay. New default jobs are added if their IDs aren't already used. Existing rules for a new activity take precedence over adding its defaults. The processing update adds Cooking, Brewing, and Smithing's ingot rule. The popup update adds the 30-second Cooking and Smithing cooldowns where unset, plus Archaeology's pot rule if it has no block-breaking rules already. Review custom Engineering or Building selectors when upgrading from placement rewards.
 
 Back up job data before upgrading. Saved clock preferences and biome discoveries update the database format; older builds cannot open the newer database. Restore a matching pre-upgrade backup if rolling back to 1.0.2. Existing XP and money already earned aren't reduced by the new rates or cap.
+
+Paycheck history and economy totals use database format 7. Restore a matching backup before returning to 1.2.0 or an older version. Earlier deposits can't be reconstructed from XP or current balances.
 
 The XP update keeps cumulative XP and applies the new requirements to it, so displayed levels can change. It doesn't replay old level-up messages or milestone announcements. Recognized default curves and XP rates upgrade once; custom curve points, reward amounts, selectors, and multipliers stay. A customized shared curve also stays in place.

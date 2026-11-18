@@ -19,7 +19,17 @@ public final class DataStore implements AutoCloseable {
         public Payment(String id, UUID player, String name, BigDecimal amount) { this(id, player, name, amount, Map.of(Paycheck.PREVIOUS, amount)); }
     }
     public record Reservation(PlayerProfile.Snapshot player, Payment payment) { }
-    public record Settlement(String id, String status, PlayerProfile.Snapshot player) { }
+    public record Settlement(String id, String status, PlayerProfile.Snapshot player, Map<String, BigDecimal> paidJobs, long settledAt) {
+        public Settlement { paidJobs = Map.copyOf(paidJobs); }
+        public Settlement(String id, String status, PlayerProfile.Snapshot player) { this(id, status, player, Map.of(), 0); }
+    }
+    public record Receipt(String id, long paidAt, Map<String, BigDecimal> jobs) {
+        public Receipt { jobs = Map.copyOf(jobs); }
+        public BigDecimal amount() { return Paycheck.total(jobs); }
+        public boolean bonus() { return jobs.keySet().stream().anyMatch(Paycheck::isBonus); }
+    }
+    private long economySince;
+    public long economySince() { return economySince; }
 
     public DataStore(Path file) throws Exception {
         Class.forName("org.sqlite.JDBC");
@@ -32,7 +42,7 @@ public final class DataStore implements AutoCloseable {
     }
     private void initialize() throws SQLException {
         try (var s = db.createStatement(); var rows = s.executeQuery("PRAGMA user_version")) {
-            if (rows.next() && rows.getInt(1) > 6) {
+            if (rows.next() && rows.getInt(1) > 7) {
                 throw new SQLException("This jobs.db belongs to a newer JustJobs version");
             }
         }
@@ -50,6 +60,18 @@ public final class DataStore implements AutoCloseable {
             s.execute("CREATE TABLE IF NOT EXISTS paycheck_jobs (uuid TEXT NOT NULL REFERENCES players(uuid), job TEXT NOT NULL, amount TEXT NOT NULL, due INTEGER NOT NULL, PRIMARY KEY(uuid,job,due))");
             s.execute("CREATE TABLE IF NOT EXISTS payment_jobs (payment TEXT NOT NULL REFERENCES payments(id) ON DELETE CASCADE, job TEXT NOT NULL, amount TEXT NOT NULL, PRIMARY KEY(payment,job))");
             s.execute("CREATE TABLE IF NOT EXISTS discovered_biomes (uuid TEXT NOT NULL REFERENCES players(uuid), biome TEXT NOT NULL, PRIMARY KEY(uuid,biome))");
+            s.execute("CREATE TABLE IF NOT EXISTS job_economy (uuid TEXT NOT NULL REFERENCES players(uuid), job TEXT NOT NULL, earned TEXT NOT NULL, capped TEXT NOT NULL, paid TEXT NOT NULL, cap_hits INTEGER NOT NULL, PRIMARY KEY(uuid,job))");
+            s.execute("CREATE TABLE IF NOT EXISTS receipts (id TEXT PRIMARY KEY, uuid TEXT NOT NULL REFERENCES players(uuid), paid_at INTEGER NOT NULL)");
+            s.execute("CREATE INDEX IF NOT EXISTS receipts_player_date ON receipts(uuid,paid_at DESC,id DESC)");
+            s.execute("CREATE TABLE IF NOT EXISTS receipt_jobs (receipt TEXT NOT NULL REFERENCES receipts(id) ON DELETE CASCADE, job TEXT NOT NULL, amount TEXT NOT NULL, PRIMARY KEY(receipt,job))");
+            s.execute("CREATE TABLE IF NOT EXISTS reporting_metadata (key TEXT PRIMARY KEY, value INTEGER NOT NULL)");
+        }
+        try (var s = db.prepareStatement("INSERT OR IGNORE INTO reporting_metadata VALUES ('since',?)")) {
+            s.setLong(1, System.currentTimeMillis()); s.executeUpdate();
+        }
+        try (var s = db.createStatement(); var rows = s.executeQuery("SELECT value FROM reporting_metadata WHERE key='since'")) {
+            if (!rows.next()) throw new SQLException("Missing economy report start date");
+            economySince = rows.getLong(1);
         }
         var columns = new java.util.HashSet<String>();
         try (var s = db.createStatement(); var rows = s.executeQuery("PRAGMA table_info(players)")) {
@@ -61,7 +83,7 @@ public final class DataStore implements AutoCloseable {
             if (!columns.contains("payday_at")) s.execute("ALTER TABLE players ADD COLUMN payday_at INTEGER NOT NULL DEFAULT 0");
             if (!columns.contains("time_format")) s.execute("ALTER TABLE players ADD COLUMN time_format INTEGER CHECK(time_format IN (12,24))");
             s.execute("UPDATE payments SET status='RESERVED' WHERE status='REVIEW'");
-            s.execute("PRAGMA user_version=6");
+            s.execute("PRAGMA user_version=7");
         }
     }
 
@@ -108,6 +130,15 @@ public final class DataStore implements AutoCloseable {
         try (var s = db.createStatement(); var rows = s.executeQuery("SELECT * FROM discovered_biomes")) {
             while (rows.next()) player(result, rows.getString("uuid")).biomes.add(rows.getString("biome"));
         }
+        try (var s = db.createStatement(); var rows = s.executeQuery("SELECT * FROM job_economy")) {
+            while (rows.next()) {
+                var stats = new JobEconomy.Snapshot(new BigDecimal(rows.getString("earned")),
+                        new BigDecimal(rows.getString("capped")), new BigDecimal(rows.getString("paid")), rows.getLong("cap_hits"));
+                if (stats.earned().signum() < 0 || stats.capped().signum() < 0 || stats.paid().signum() < 0 || stats.capHits() < 0)
+                    throw new SQLException("Invalid saved job economy totals");
+                player(result, rows.getString("uuid")).economy(rows.getString("job")).restore(stats);
+            }
+        }
         for (var p : result.values()) p.paycheck.reconcile(p.pending);
         return result;
     }
@@ -135,6 +166,15 @@ public final class DataStore implements AutoCloseable {
                 s.setString(1, p.id().toString()); s.setString(2, entry.getKey()); s.setDouble(3, entry.getValue()); s.addBatch();
             }
             s.executeBatch();
+        }
+        try (var totals = db.prepareStatement("INSERT INTO job_economy VALUES (?,?,?,?,?,?) ON CONFLICT(uuid,job) DO UPDATE SET earned=excluded.earned,capped=excluded.capped,paid=excluded.paid,cap_hits=excluded.cap_hits")) {
+            for (var entry : p.economy().entrySet()) {
+                var stats = entry.getValue();
+                totals.setString(1, p.id().toString()); totals.setString(2, entry.getKey());
+                totals.setString(3, stats.earned().toPlainString()); totals.setString(4, stats.capped().toPlainString());
+                totals.setString(5, stats.paid().toPlainString()); totals.setLong(6, stats.capHits()); totals.addBatch();
+            }
+            totals.executeBatch();
         }
         try (var s = db.prepareStatement("DELETE FROM paycheck_jobs WHERE uuid=?")) { s.setString(1, p.id().toString()); s.executeUpdate(); }
         try (var s = db.prepareStatement("INSERT INTO paycheck_jobs VALUES (?,?,?,?)")) {
@@ -251,9 +291,45 @@ public final class DataStore implements AutoCloseable {
                     write(settlement.player());
                     s.setString(1, settlement.status()); s.setString(2, settlement.id());
                     if (s.executeUpdate() != 1) throw new SQLException("Payment has already been settled: " + settlement.id());
+                    if (Paycheck.total(settlement.paidJobs()).signum() > 0) receipt(settlement);
                 }
             }
         });
+    }
+
+    private void receipt(Settlement settlement) throws SQLException {
+        try (var s = db.prepareStatement("INSERT INTO receipts VALUES (?,?,?)")) {
+            s.setString(1, settlement.id()); s.setString(2, settlement.player().id().toString());
+            s.setLong(3, settlement.settledAt()); s.executeUpdate();
+        }
+        try (var s = db.prepareStatement("INSERT INTO receipt_jobs VALUES (?,?,?)")) {
+            for (var entry : settlement.paidJobs().entrySet()) {
+                s.setString(1, settlement.id()); s.setString(2, entry.getKey()); s.setString(3, entry.getValue().toPlainString()); s.addBatch();
+            }
+            s.executeBatch();
+        }
+        try (var s = db.prepareStatement("DELETE FROM receipts WHERE uuid=? AND id NOT IN (SELECT id FROM receipts WHERE uuid=? ORDER BY paid_at DESC,id DESC LIMIT 30)")) {
+            s.setString(1, settlement.player().id().toString()); s.setString(2, settlement.player().id().toString()); s.executeUpdate();
+        }
+    }
+
+    public List<Receipt> history(UUID player) throws SQLException {
+        var result = new ArrayList<Receipt>();
+        try (var s = db.prepareStatement("SELECT r.id,r.paid_at,j.job,j.amount FROM receipts r JOIN receipt_jobs j ON j.receipt=r.id WHERE r.uuid=? ORDER BY r.paid_at DESC,r.id DESC,j.job")) {
+            s.setString(1, player.toString());
+            try (var rows = s.executeQuery()) {
+                String id = null; long at = 0; var jobs = new HashMap<String, BigDecimal>();
+                while (rows.next()) {
+                    if (!rows.getString("id").equals(id)) {
+                        if (id != null) result.add(new Receipt(id, at, jobs));
+                        id = rows.getString("id"); at = rows.getLong("paid_at"); jobs.clear();
+                    }
+                    jobs.put(rows.getString("job"), new BigDecimal(rows.getString("amount")));
+                }
+                if (id != null) result.add(new Receipt(id, at, jobs));
+            }
+        }
+        return List.copyOf(result);
     }
 
     public List<Payment> unresolved() throws SQLException {

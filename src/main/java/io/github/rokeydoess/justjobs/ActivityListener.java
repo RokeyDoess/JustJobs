@@ -187,12 +187,14 @@ public final class ActivityListener implements Listener {
         if (e instanceof PlayerTeleportEvent || e.isCancelled() || !e.hasChangedPosition()) return;
         if (plugin.registry().rewards(TRAVEL).isEmpty()) return;
         Player player = e.getPlayer();
-        if (player.getVehicle() != null || player.isFlying() || player.isGliding()
-                || player.isRiptiding() || player.isInWater() || player.isSwimming() || player.getFallDistance() > 3
+        boolean gliding = player.isGliding();
+        if (player.getVehicle() != null || player.isFlying()
+                || player.isRiptiding() || player.isInWater() || player.isSwimming() || (!gliding && player.getFallDistance() > 3)
                 || player.hasPotionEffect(org.bukkit.potion.PotionEffectType.LEVITATION)
                 || player.hasPotionEffect(org.bukkit.potion.PotionEffectType.SLOW_FALLING)) return;
         if (e.getFrom().getWorld() != e.getTo().getWorld()) return;
         double distance = Math.hypot(e.getTo().getX() - e.getFrom().getX(), e.getTo().getZ() - e.getFrom().getZ());
+        if (gliding) distance *= plugin.settings().getDouble("rules.elytra-distance-multiplier", 0.15);
         if (!Double.isFinite(distance) || distance <= 0) return;
         int second = Math.floorDiv(Bukkit.getCurrentTick(), 20);
         var previous = walking.get(player.getUniqueId());

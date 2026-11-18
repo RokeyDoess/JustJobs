@@ -623,6 +623,7 @@ public class ReleaseChecks extends JavaPlugin implements Listener {
         Bukkit.getPluginManager().callEvent(new PlayerTeleportEvent(grounded, new Location(world, base, 200, 2048), new Location(world, base + 100, 200, 2048)));
         check(jobs.profile(grounded).travel.distance("exploring") == 0, "cancelled moves and teleports do not accumulate distance");
         jobs.award(grounded, JobRegistry.Activity.TRAVEL, null, null, 25);
+        elytraChecks();
         var position = new java.util.concurrent.atomic.AtomicReference<>(new Location(world, base, 200, 2048));
         Player[] driver = new Player[1];
         Boat boat = (Boat) Proxy.newProxyInstance(Boat.class.getClassLoader(), new Class<?>[]{Boat.class}, (p, method, args) -> switch (method.getName()) {
@@ -648,6 +649,35 @@ public class ReleaseChecks extends JavaPlugin implements Listener {
         activities.resetTravel();
         check(Math.abs(jobs.profile(driver[0]).travel.distance("sailing") - 1) < 1e-6, "a reload flushes unfinished sailing samples into saved travel progress");
         jobs.settings().set("rules.maximum-walk-blocks-per-sample", 12);
+    }
+    void elytraChecks() {
+        Player walker = player(new UUID(15, 2), "ElytraChecks");
+        Player glider = (Player) Proxy.newProxyInstance(Player.class.getClassLoader(), new Class<?>[]{Player.class}, (p, method, args) -> switch (method.getName()) {
+            case "isGliding" -> true;
+            case "getFallDistance" -> 20.0f;
+            default -> method.invoke(walker, args);
+        });
+        var progress = jobs.profile(walker);
+        var from = new Location(world, base, 200, 2048);
+        var to = new Location(world, base + 60, 200, 2048);
+        progress.biomes.add(to.getBlock().getBiome().getKey().toString());
+        for (int i = 0; i < 55; i++)
+            Bukkit.getPluginManager().callEvent(new PlayerMoveEvent(glider, from, to));
+        check(Math.abs(progress.travel.distance("exploring") - 495) < 1e-6 && progress.xp("exploring") == 0,
+                "3300 blocks of Elytra flight count as 495 blocks of Exploring progress");
+        var walkTo = new Location(world, base + 5, 200, 2048);
+        progress.biomes.add(walkTo.getBlock().getBiome().getKey().toString());
+        Bukkit.getPluginManager().callEvent(new PlayerMoveEvent(walker, from, walkTo));
+        check(progress.xp("exploring") == 10 && progress.earnings.total("exploring", System.currentTimeMillis()).compareTo(new BigDecimal("0.375")) == 0
+                        && progress.travel.distance("exploring") == 0,
+                "gliding and walking share the same XP and money milestones");
+        jobs.settings().set("rules.elytra-distance-multiplier", 0);
+        try {
+            Bukkit.getPluginManager().callEvent(new PlayerMoveEvent(glider, from, to));
+            check(progress.travel.distance("exploring") == 0, "setting the Elytra multiplier to zero disables flight distance");
+        } finally {
+            jobs.settings().set("rules.elytra-distance-multiplier", 0.15);
+        }
     }
     void paymentChecks() {
         rejected.add(RETRY); throwAfter.add(UNCERTAIN);
