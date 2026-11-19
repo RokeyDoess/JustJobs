@@ -45,6 +45,7 @@ public final class MilestoneChecks extends ReleaseChecks {
         var file = jobs.getDataFolder().toPath().resolve("config.yml").toFile();
         var config = YamlConfiguration.loadConfiguration(file);
         config.set("feedback.level-up-chat", false);
+        config.set("economy.level-bonus-interval", 0);
         config.set("feedback.milestone-level-interval", null);
         config.save(file); reload();
         check(jobs.settings().getInt("feedback.milestone-level-interval") == 50, "existing configs receive the default without resetting other settings");

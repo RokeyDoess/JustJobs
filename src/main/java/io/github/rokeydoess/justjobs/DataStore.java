@@ -42,7 +42,7 @@ public final class DataStore implements AutoCloseable {
     }
     private void initialize() throws SQLException {
         try (var s = db.createStatement(); var rows = s.executeQuery("PRAGMA user_version")) {
-            if (rows.next() && rows.getInt(1) > 7) {
+            if (rows.next() && rows.getInt(1) > 8) {
                 throw new SQLException("This jobs.db belongs to a newer JustJobs version");
             }
         }
@@ -65,6 +65,7 @@ public final class DataStore implements AutoCloseable {
             s.execute("CREATE INDEX IF NOT EXISTS receipts_player_date ON receipts(uuid,paid_at DESC,id DESC)");
             s.execute("CREATE TABLE IF NOT EXISTS receipt_jobs (receipt TEXT NOT NULL REFERENCES receipts(id) ON DELETE CASCADE, job TEXT NOT NULL, amount TEXT NOT NULL, PRIMARY KEY(receipt,job))");
             s.execute("CREATE TABLE IF NOT EXISTS reporting_metadata (key TEXT PRIMARY KEY, value INTEGER NOT NULL)");
+            s.execute("CREATE TABLE IF NOT EXISTS level_bonus_progress (uuid TEXT NOT NULL REFERENCES players(uuid), job TEXT NOT NULL, level INTEGER NOT NULL, PRIMARY KEY(uuid,job))");
         }
         try (var s = db.prepareStatement("INSERT OR IGNORE INTO reporting_metadata VALUES ('since',?)")) {
             s.setLong(1, System.currentTimeMillis()); s.executeUpdate();
@@ -83,7 +84,7 @@ public final class DataStore implements AutoCloseable {
             if (!columns.contains("payday_at")) s.execute("ALTER TABLE players ADD COLUMN payday_at INTEGER NOT NULL DEFAULT 0");
             if (!columns.contains("time_format")) s.execute("ALTER TABLE players ADD COLUMN time_format INTEGER CHECK(time_format IN (12,24))");
             s.execute("UPDATE payments SET status='RESERVED' WHERE status='REVIEW'");
-            s.execute("PRAGMA user_version=7");
+            s.execute("PRAGMA user_version=8");
         }
     }
 
@@ -140,6 +141,9 @@ public final class DataStore implements AutoCloseable {
             }
         }
         for (var p : result.values()) p.paycheck.reconcile(p.pending);
+        try (var s = db.createStatement(); var rows = s.executeQuery("SELECT * FROM level_bonus_progress")) {
+            while (rows.next()) player(result, rows.getString("uuid")).levelBonuses.restore(rows.getString("job"), rows.getInt("level"));
+        }
         return result;
     }
     private static PlayerProfile player(Map<UUID, PlayerProfile> players, String id) throws SQLException {
@@ -156,6 +160,12 @@ public final class DataStore implements AutoCloseable {
             s.setBoolean(6, p.paydayChat()); s.setLong(7, p.paycheck().next());
             if (p.timeFormat() == null) s.setNull(8, java.sql.Types.INTEGER); else s.setInt(8, p.timeFormat());
             s.executeUpdate();
+        }
+        try (var s = db.prepareStatement("INSERT INTO level_bonus_progress VALUES (?,?,?) ON CONFLICT(uuid,job) DO UPDATE SET level=MAX(level,excluded.level)")) {
+            for (var entry : p.levelBonuses().entrySet()) {
+                s.setString(1, p.id().toString()); s.setString(2, entry.getKey()); s.setInt(3, entry.getValue()); s.addBatch();
+            }
+            s.executeBatch();
         }
         try (var s = db.prepareStatement("INSERT OR IGNORE INTO discovered_biomes VALUES (?,?)")) {
             for (String biome : p.biomes()) { s.setString(1, p.id().toString()); s.setString(2, biome); s.addBatch(); }

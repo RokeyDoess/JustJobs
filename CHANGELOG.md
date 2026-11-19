@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.2 (2026-11-18)
+
+- Added job level bonuses every 50 levels by default. Each milestone pays half its level, scaled by the global payout multiplier, outside normal job money caps.
+- Level bonus timing and amounts are configurable separately from chat announcements. Crossed milestones pay together, with saved progress preventing repeat rewards.
+- Updated Maven to 3.10.1 and refreshed the Java setup and CodeQL actions.
+
 ## 1.2.1 (2026-11-17)
 
 - Added paycheck history with dates and job breakdowns for the latest 30 confirmed deposits, including bonuses.

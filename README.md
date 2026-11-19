@@ -9,7 +9,7 @@ A jobs plugin that just does jobs.
 
 Dig a tunnel, chop some trees, catch a fish. JustJobs rewards everyday survival play with job XP, levels, and money. Every job tracks automatically, so players can get on with playing instead of choosing careers or managing job slots.
 
-`/jobs` groups jobs into Gathering, Crafting & Trade, and Adventure. Check your progress at a glance, then click a job for its activities and rewards. Leaderboards and your next paycheck are close at hand. A boss bar keeps progress visible while playing. Settings lets players choose their boss bar, chat and clock preferences. Every 50 job levels, the server gets a milestone announcement.
+`/jobs` groups jobs into Gathering, Crafting & Trade, and Adventure. Check your progress at a glance, then click a job for its activities and rewards. Leaderboards and your next paycheck are close at hand. A boss bar keeps progress visible while playing. Settings lets players choose their boss bar, chat and clock preferences. Every 50 job levels brings a money bonus and a server announcement.
 
 ## What you get
 

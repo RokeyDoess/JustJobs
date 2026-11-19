@@ -20,6 +20,7 @@ public final class PlayerProfile {
     public final TravelProgress travel = new TravelProgress();
     public final java.util.Set<String> biomes = new java.util.HashSet<>();
     public final Paycheck paycheck = new Paycheck();
+    public final LevelBonuses levelBonuses = new LevelBonuses();
 
     public PlayerProfile(UUID id, String name) { this.id = id; this.name = name; }
     public double xp(String job) { return xp.getOrDefault(job, 0.0); }
@@ -29,10 +30,10 @@ public final class PlayerProfile {
         paycheck.reconcile(pending);
         var savedStats = new HashMap<String, JobEconomy.Snapshot>();
         economy.forEach((job, stats) -> savedStats.put(job, stats.snapshot()));
-        return new Snapshot(id, name, notifications, bossBar, pending, Map.copyOf(xp), earnings.snapshot(now), travel.snapshot(), paydayChat, paycheck.snapshot(), timeFormat, java.util.Set.copyOf(biomes), Map.copyOf(savedStats));
+        return new Snapshot(id, name, notifications, bossBar, pending, Map.copyOf(xp), earnings.snapshot(now), travel.snapshot(), paydayChat, paycheck.snapshot(), timeFormat, java.util.Set.copyOf(biomes), Map.copyOf(savedStats), levelBonuses.snapshot());
     }
     public record Snapshot(UUID id, String name, boolean notifications, boolean bossBar, BigDecimal pending,
                            Map<String, Double> xp, Map<String, Map<Long, BigDecimal>> earnings, Map<String, Double> travel,
                            boolean paydayChat, Paycheck.Snapshot paycheck, Integer timeFormat, java.util.Set<String> biomes,
-                           Map<String, JobEconomy.Snapshot> economy) { }
+                           Map<String, JobEconomy.Snapshot> economy, Map<String, Integer> levelBonuses) { }
 }

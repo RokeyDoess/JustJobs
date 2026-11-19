@@ -31,6 +31,7 @@ import java.util.logging.Level;
 public final class JustJobsPlugin extends JavaPlugin {
     private YamlConfiguration settings;
     private BigDecimal payoutMultiplier = BigDecimal.ONE;
+    private BigDecimal levelBonusPerLevel = new BigDecimal("0.5");
     private TimeDisplay timeDisplay = new TimeDisplay(12);
     private JobRegistry registry;
     private DataStore store;
@@ -129,6 +130,8 @@ public final class JustJobsPlugin extends JavaPlugin {
         ConfigValues.integer(next, "development.summary-interval-seconds", 300, 10, 3600);
         ConfigValues.money(next, "economy.hourly-income-limit-per-job", new BigDecimal("50"));
         var nextPayoutMultiplier = ConfigValues.money(next, "economy.payout-multiplier", BigDecimal.ONE);
+        ConfigValues.integer(next, "economy.level-bonus-interval", 50, 0, Integer.MAX_VALUE);
+        var nextLevelBonusPerLevel = ConfigValues.money(next, "economy.level-bonus-per-level", new BigDecimal("0.5"));
         ConfigValues.text(next, "economy.currency-symbol", "$", 16);
         ConfigValues.integer(next, "feedback.leaderboard-preview-size", 5, 1, 10);
         ConfigValues.integer(next, "feedback.milestone-level-interval", 50, 0, Integer.MAX_VALUE);
@@ -158,6 +161,7 @@ public final class JustJobsPlugin extends JavaPlugin {
         ConfigFiles.save(getDataFolder().toPath(), next.saveToString(), jobsText);
         settings = next;
         payoutMultiplier = nextPayoutMultiplier;
+        levelBonusPerLevel = nextLevelBonusPerLevel;
         registry = loadedJobs.registry();
         timeDisplay = nextTimeDisplay;
         levelMessages.clear();
@@ -296,6 +300,18 @@ public final class JustJobsPlugin extends JavaPlugin {
             double before = profile.xp(job.id());
             double after = before + xp;
             if (!Double.isFinite(after)) continue;
+            var progress = job.progression().progress(after);
+            int previousLevel = job.progression().progress(before).level();
+            var levelReward = profile.levelBonuses.claim(job.id(), previousLevel, progress.level(),
+                    settings.getInt("economy.level-bonus-interval", 50), levelBonusPerLevel);
+            if (levelReward != null) {
+                BigDecimal amount = scaleMoney(levelReward.amount());
+                if (bonusSources == null) bonusSources = new HashMap<>();
+                String source = job.name() + (levelReward.first() == levelReward.last() ? ": level " + levelReward.last()
+                        : ": levels " + levelReward.first() + " through " + levelReward.last());
+                bonusSources.merge(source, amount, BigDecimal::add);
+                bonus = bonus.add(amount);
+            }
             profile.xp.put(job.id(), after);
             boolean payday = paydayEnabled();
             BigDecimal limit = hourlyLimit(job);
@@ -317,8 +333,6 @@ public final class JustJobsPlugin extends JavaPlugin {
                 unpaid.add(profile.id);
                 if (!payday || bonus.signum() > 0) payoutQueue.add(profile.id);
             }
-            var progress = job.progression().progress(after);
-            int previousLevel = job.progression().progress(before).level();
             if (player != null && settings.getBoolean("feedback.level-up-chat", true) && profile.notifications && progress.level() > previousLevel) {
                 levelMessages.offer(profile.id, new LevelUpMessages.Notice(job.id(), job.name(), progress.level()));
                 flushLevelMessages(player, now);

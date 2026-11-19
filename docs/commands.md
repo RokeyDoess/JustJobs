@@ -21,6 +21,8 @@ History shows the actual amount deposited, its date, and each job's share. Bonus
 
 Bonuses pay immediately. Hover over “Bonus!” in their deposit message to see the source. The server can disable these messages separately from payday chat.
 
+Job level bonuses pay every 50 levels by default, worth half the milestone level before the global payout multiplier. Level 50 pays 25, level 100 pays 50, and so on. These payments use the bonus message and appear in paycheck history.
+
 Detailed leaderboards rank players by total job XP, reading left to right from the top row down.
 
 Jobs are grouped into Gathering, Crafting & Trade, and Adventure rows. Hover over a job for its level, progress, and earnings. Click it for detailed progress and individual reward entries, with a button for that job's leaderboard. Back returns to the jobs page you came from.

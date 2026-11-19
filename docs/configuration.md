@@ -108,6 +108,12 @@ Direct inputs must be loaded while the player is eligible to earn. Known creativ
 
 ## Boss rewards and bonuses
 
+Job levels also pay bonuses every 50 levels by default. Level 50 pays 25 coins, level 100 pays 50, and level 150 pays 75. The global payout multiplier applies to these amounts. Bonuses pay immediately outside the job cap, with the job and milestone shown in the message hover.
+
+Set `economy.level-bonus-interval` to change the interval, or `0` to disable it. `economy.level-bonus-per-level` sets the amount per reached level and defaults to `0.5`. These settings are independent of global chat announcements. If one action crosses several milestones, all their rewards are combined into a single bonus. Whole number payouts carry any fraction into the source job's next paycheck.
+
+Only newly reached milestones qualify. Existing levels receive no back payments. Saved claim progress prevents earning the same milestones again after a restart, a curve change, or a period with bonuses disabled. A zero payout multiplier also consumes crossed milestones.
+
 Hunting's Ender Dragon reward is 200 XP and 25 coins; the Wither gives 50 XP and 10 coins. Edit their `boss-kill` rules in `jobs.yml` to change either amount. Every eligible player who deals positive, uncancelled damage during that boss's lifetime gets the full reward on its death. It isn't split, and the finishing blow doesn't matter. Projectiles count for their shooter; nearby players who never damage it don't qualify. Participants stay recorded across reloads and restarts, and can receive credit while offline.
 
 The boss rules use `bonus: true`. This reusable rule option pays immediately in a separate deposit, outside the job money cap, without consuming its normal allowance. Set it to `false`, or leave it out, to use the usual cap and payday schedule. Failed deposits retry automatically without releasing normal paycheck earnings early.
@@ -200,6 +206,8 @@ These are in `config.yml`, with short comments beside each setting. Missing comm
 | Setting | Default | Meaning |
 | --- | --- | --- |
 | `economy.payout-multiplier` | 1 | Scale new rewards, bonuses, and job caps; `0` stops new money earnings. XP and saved money stay unchanged |
+| `economy.level-bonus-interval` | 50 | Pay a job level bonus every N levels; `0` disables it |
+| `economy.level-bonus-per-level` | 0.5 | Multiply each reached milestone level by this amount before the global payout multiplier |
 | `economy.payout-interval-seconds` | 10 | Retry interval for unpaid earnings |
 | `economy.payday-enabled` | true | Hold new earnings for scheduled paydays |
 | `economy.payday-interval-minutes` | 60 | Minutes between shared paydays |
@@ -257,5 +265,7 @@ Older configs upgrade once. Recognized default rates and shared caps move to the
 Back up job data before upgrading. Saved clock preferences and biome discoveries update the database format; older builds cannot open the newer database. Restore a matching pre-upgrade backup if rolling back to 1.0.2. Existing XP and money already earned aren't reduced by the new rates or cap.
 
 Paycheck history and economy totals use database format 7. Restore a matching backup before returning to 1.2.0 or an older version. Earlier deposits can't be reconstructed from XP or current balances.
+
+Job level bonus claims use database format 8. Returning to 1.2.1 or an earlier version requires a matching backup.
 
 The XP update keeps cumulative XP and applies the new requirements to it, so displayed levels can change. It doesn't replay old level-up messages or milestone announcements. Recognized default curves and XP rates upgrade once; custom curve points, reward amounts, selectors, and multipliers stay. A customized shared curve also stays in place.

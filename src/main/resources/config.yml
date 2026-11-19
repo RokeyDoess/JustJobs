@@ -5,6 +5,10 @@ config-version: 5
 economy:
   # Scale all new money rewards, bonuses, and job caps. 0 stops new earnings; XP and saved money stay unchanged.
   payout-multiplier: 1
+  # Pay a bonus at each job level milestone. 50 pays at levels 50, 100, 150, etc.; 0 disables it.
+  level-bonus-interval: 50
+  # Bonus = reached level times this amount, then the global payout multiplier. Paid outside job caps.
+  level-bonus-per-level: '0.5'
   # Shown before money amounts in menus and messages. Use '' for no symbol.
   currency-symbol: '$'
   # Pay whole coins only; fractional earnings carry forward to later payouts.
